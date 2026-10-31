@@ -632,16 +632,15 @@
     // 100% Client-Side Solana & RPC Architecture
     // ============================================
     const DEFAULT_RPCS = [
-      'https://api.mainnet-beta.solana.com',
       'https://solana-rpc.publicnode.com',
-      'https://rpc.ankr.com/solana'
+      'https://api.mainnet-beta.solana.com'
     ];
     let activeRpcIndex = 0;
 
     function getRpcUrl() {
       const saved = localStorage.getItem('farmvolume_custom_rpc');
       if (saved && saved.trim().length > 0) return saved.trim();
-      return window.location.origin + '/api/rpc';
+      return DEFAULT_RPCS[activeRpcIndex];
     }
 
     function getSolanaConnection() {
@@ -703,71 +702,69 @@
       return address;
     }
 
-    // 2. Hybrid Wallet Balances Fetch (Local API First + Client-Side Fallback)
+    // Helper: Direct Binary SPL Token Balance Decoder (Bypasses all RPC index limits)
+    function decodeSplTokenBalance(base64Data, decimals = 6) {
+      if (!base64Data) return 0;
+      try {
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const view = new DataView(bytes.buffer);
+        const low = view.getUint32(64, true);
+        const high = view.getUint32(68, true);
+        const rawAmount = BigInt(low) + (BigInt(high) << 32n);
+        return Number(rawAmount) / Math.pow(10, decimals);
+      } catch (e) {
+        console.warn('Decode SPL balance failed:', e);
+        return 0;
+      }
+    }
+
+    // 2. Client-Side High-Speed Blockchain Balance Fetch
     async function refreshBalances() {
       if (!userWallet) return;
       try {
-        // Priority 1: Try Local API if running on localhost / dev server
-        try {
-          const apiRes = await fetch(`/api/wallet-balances?pubkey=${userWallet}`);
-          if (apiRes.ok) {
-            const data = await apiRes.json();
-            if (data && typeof data.sol === 'number') {
-              updateBalancesUI(data.sol, data.usdc, data.usdt);
-              return;
-            }
-          }
-        } catch (_) {}
-
-        // Priority 2: Direct Client-Side Blockchain Lookup
         const conn = getSolanaConnection();
         const pubkey = new solanaWeb3.PublicKey(userWallet);
 
-        // Fetch SOL Balance
+        // Fetch Native SOL Balance
         const lamports = await conn.getBalance(pubkey);
         const solVal = lamports / 1e9;
 
         const usdcMint = new solanaWeb3.PublicKey(TOKENS.USDC);
         const usdtMint = new solanaWeb3.PublicKey(TOKENS.USDT);
 
-        // Fetch USDC
+        // Fetch USDC via Direct Account Info Decode
         let usdcVal = 0;
         try {
-          const ata = deriveAta(pubkey, usdcMint);
-          const bal = await conn.getTokenAccountBalance(ata);
-          usdcVal = bal.value.uiAmount || 0;
-        } catch (_) {
-          try {
-            const res = await conn.getParsedTokenAccountsByOwner(pubkey, { mint: usdcMint });
-            for (const item of res.value) {
-              usdcVal += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
-            }
-          } catch (e) {
-            console.warn('USDC client fetch note:', e);
+          const usdcAta = deriveAta(pubkey, usdcMint);
+          const accInfo = await conn.getAccountInfo(usdcAta);
+          if (accInfo && accInfo.data) {
+            const rawData = Array.isArray(accInfo.data) ? accInfo.data[0] : accInfo.data;
+            usdcVal = decodeSplTokenBalance(rawData, 6);
           }
+        } catch (e) {
+          console.warn('USDC decode note:', e);
         }
 
-        // Fetch USDT
+        // Fetch USDT via Direct Account Info Decode
         let usdtVal = 0;
         try {
-          const ata = deriveAta(pubkey, usdtMint);
-          const bal = await conn.getTokenAccountBalance(ata);
-          usdtVal = bal.value.uiAmount || 0;
-        } catch (_) {
-          try {
-            const res = await conn.getParsedTokenAccountsByOwner(pubkey, { mint: usdtMint });
-            for (const item of res.value) {
-              usdtVal += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
-            }
-          } catch (e) {
-            console.warn('USDT client fetch note:', e);
+          const usdtAta = deriveAta(pubkey, usdtMint);
+          const accInfo = await conn.getAccountInfo(usdtAta);
+          if (accInfo && accInfo.data) {
+            const rawData = Array.isArray(accInfo.data) ? accInfo.data[0] : accInfo.data;
+            usdtVal = decodeSplTokenBalance(rawData, 6);
           }
+        } catch (e) {
+          console.warn('USDT decode note:', e);
         }
 
         updateBalancesUI(solVal, usdcVal, usdtVal);
       } catch (err) {
         console.error('Error in refreshBalances:', err);
-        activeRpcIndex = (activeRpcIndex + 1) % DEFAULT_RPCS.length;
       }
     }
 
@@ -1131,10 +1128,7 @@
       const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
       const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
 
-      if (usdcVal < amount && usdtVal < amount) {
-        notify('Insufficient Balance', `You have $${usdcVal.toFixed(2)} USDC and $${usdtVal.toFixed(2)} USDT, but trade size is $${amount}. Please lower amount or add funds.`, 'warning');
-        return;
-      }
+      const startingToken = (usdcVal < amount && usdtVal >= amount) ? 'USDT' : 'USDC';
 
       const confirmHtml = `
         <div style="font-size:0.95rem; margin-bottom:12px;">Launch volume farming cycles on ${dex.toUpperCase()}?</div>
