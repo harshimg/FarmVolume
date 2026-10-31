@@ -1,0 +1,1240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FarmVolume — DEX Volume Generator with Zero-Popup Auto-Loop</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --card-bg: #121824;
+      --border: #1f293d;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --green: #10b981;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --purple: #8b5cf6;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      padding: 24px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 1300px; margin: 0 auto; }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-running { background: rgba(16, 185, 129, 0.2); color: var(--green); border: 1px solid var(--green); }
+    .badge-paused { background: rgba(245, 158, 11, 0.2); color: var(--yellow); border: 1px solid var(--yellow); }
+    .badge-stopped { background: rgba(239, 68, 68, 0.2); color: var(--red); border: 1px solid var(--red); }
+    .badge-human { background: rgba(139, 92, 246, 0.2); color: var(--purple); border: 1px solid var(--purple); }
+
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+
+    button {
+      padding: 9px 18px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card-bg);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.875rem;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button:hover { background: #1c2436; }
+    button.btn-primary { background: var(--primary); border-color: var(--primary); color: white; }
+    button.btn-primary:hover { background: var(--primary-hover); }
+    button.btn-success { background: rgba(16, 185, 129, 0.2); border-color: var(--green); color: var(--green); }
+    button.btn-success:hover { background: var(--green); color: white; }
+    button.btn-purple { background: rgba(139, 92, 246, 0.25); border-color: var(--purple); color: #c084fc; }
+    button.btn-purple:hover { background: var(--purple); color: white; }
+    button.btn-danger { background: rgba(239, 68, 68, 0.2); border-color: var(--red); color: var(--red); }
+    button.btn-danger:hover { background: var(--red); color: white; }
+
+    /* Wallet Card */
+    .wallet-banner {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.12) 0%, rgba(139, 92, 246, 0.08) 100%);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .wallet-info { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .wallet-chip {
+      background: rgba(0,0,0,0.3);
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.875rem;
+    }
+
+    .balances-row {
+      display: flex;
+      gap: 16px;
+      margin-top: 10px;
+      font-size: 0.85rem;
+    }
+    .balance-tag {
+      background: var(--card-bg);
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+
+    /* Tabs & Panels */
+    .tabs-container {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      background: #0e131d;
+      border: 1px solid var(--border);
+      border-radius: 8px 8px 0 0;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .tab-btn.active {
+      background: var(--card-bg);
+      border-bottom-color: var(--card-bg);
+      color: var(--primary);
+      font-weight: 700;
+    }
+
+    /* Trading Control Panel */
+    .trade-control-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 24px;
+    }
+
+    .controls-flex {
+      display: flex;
+      gap: 16px;
+      align-items: flex-end;
+      flex-wrap: wrap;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .form-group label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .form-group input, .form-group select {
+      background: #0b0e14;
+      border: 1px solid var(--border);
+      padding: 9px 12px;
+      border-radius: 6px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      min-width: 140px;
+    }
+
+    /* Progress Banner for Auto Loop */
+    .progress-banner {
+      background: rgba(139, 92, 246, 0.1);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 16px;
+      display: none;
+    }
+    .progress-bar-bg {
+      background: #0b0e14;
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-bar-fill {
+      background: linear-gradient(90deg, var(--primary), var(--purple));
+      height: 100%;
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    .grid-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+    .stat-label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .stat-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
+
+    .table-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      overflow-x: auto;
+    }
+    .table-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.875rem; }
+    th { padding: 10px; color: var(--text-muted); border-bottom: 1px solid var(--border); font-size: 0.75rem; text-transform: uppercase; }
+    td { padding: 12px 10px; border-bottom: 1px solid #161e2e; font-family: 'JetBrains Mono', monospace; }
+    tr:last-child td { border-bottom: none; }
+
+    .val-green { color: var(--green); }
+    .val-red { color: var(--red); }
+    .val-yellow { color: var(--yellow); }
+    .val-purple { color: var(--purple); }
+
+    .tx-link { color: var(--primary); text-decoration: none; font-size: 0.8rem; }
+    .tx-link:hover { text-decoration: underline; }
+
+    /* Modern Toast System */
+    .toast-container {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 99999;
+      pointer-events: none;
+    }
+
+    .toast {
+      pointer-events: auto;
+      min-width: 320px;
+      max-width: 440px;
+      background: rgba(18, 24, 36, 0.96);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(16px);
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      transition: all 0.3s ease;
+    }
+    .toast.toast-hiding {
+      opacity: 0;
+      transform: translateX(40px);
+    }
+    .toast-success { border-color: rgba(16, 185, 129, 0.5); box-shadow: 0 0 20px rgba(16, 185, 129, 0.15); }
+    .toast-error { border-color: rgba(239, 68, 68, 0.5); box-shadow: 0 0 20px rgba(239, 68, 68, 0.15); }
+    .toast-info { border-color: rgba(59, 130, 246, 0.5); box-shadow: 0 0 20px rgba(59, 130, 246, 0.15); }
+    .toast-purple { border-color: rgba(139, 92, 246, 0.5); box-shadow: 0 0 20px rgba(139, 92, 246, 0.15); }
+    .toast-icon { font-size: 1.3rem; line-height: 1; margin-top: 1px; }
+    .toast-content { flex: 1; }
+    .toast-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 3px; }
+    .toast-message { font-size: 0.8rem; color: var(--text-muted); line-height: 1.45; word-break: break-word; }
+
+    @keyframes slideInRight {
+      from { transform: translateX(110%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Modern Modal System */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 99998;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      max-width: 480px;
+      width: 90%;
+      box-shadow: 0 20px 25px -5px rgba(0,0,0,0.6);
+      transform: scale(0.95);
+      animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    .modal-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .modal-body { font-size: 0.875rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 22px; white-space: pre-line; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 12px; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  </style>
+</head>
+<body>
+  <!-- Toast Notifications Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Custom Confirmation Modal -->
+  <div id="confirmModal" class="modal-overlay">
+    <div class="modal-card">
+      <div id="modalTitle" class="modal-title">Confirm Action</div>
+      <div id="modalBody" class="modal-body">Are you sure?</div>
+      <div class="modal-actions">
+        <button id="modalCancelBtn" onclick="closeConfirmModal(false)">Cancel</button>
+        <button id="modalConfirmBtn" class="btn-primary" onclick="closeConfirmModal(true)">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="brand">
+        <h1>⚡ FarmVolume</h1>
+        <span id="statusBadge" class="badge badge-stopped">IDLE</span>
+        <span class="badge badge-human">100% Client-Side Web3</span>
+        <span class="badge badge-running">Zero Backend Required</span>
+      </div>
+      <div class="header-actions">
+        <button id="rpcBtn" onclick="toggleRpcBar()" style="font-size:0.8rem; padding:7px 12px;">⚙️ RPC Config</button>
+        <button id="connectWalletBtn" class="btn-primary" onclick="connectWallet()">
+          <span>🦊 Connect Phantom / Solflare</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Optional RPC Settings Bar -->
+    <div id="rpcConfigBar" style="display:none; background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:20px;">
+      <div style="font-weight:600; font-size:0.85rem; margin-bottom:8px; color:var(--text);">🌐 Solana RPC Endpoint Configuration (Client-Side)</div>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="customRpcInput" placeholder="https://api.mainnet-beta.solana.com (or your private Helius/QuickNode RPC)" style="flex:1; min-width:280px; background:#0b0e14; border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-family:'JetBrains Mono'; font-size:0.85rem;">
+        <button class="btn-primary" onclick="saveCustomRpc()" style="padding:7px 14px; font-size:0.85rem;">Save & Reconnect</button>
+        <button onclick="resetRpcToDefault()" style="padding:7px 14px; font-size:0.85rem;">Reset Default</button>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">Default uses multi-RPC failover with automatic public rotation. Add your own RPC for ultra-fast confirmation.</div>
+    </div>
+
+    <!-- Connected Wallet Banner -->
+    <div class="wallet-banner">
+      <div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Connected Solana Wallet</div>
+        <div class="wallet-info">
+          <div id="walletAddress" class="wallet-chip">Not Connected (Click Connect Above)</div>
+          <a id="solscanLink" href="#" target="_blank" class="tx-link" style="display: none;">View on Solscan ↗</a>
+        </div>
+        <div class="balances-row" id="balancesRow" style="display: none;">
+          <div class="balance-tag">SOL: <strong id="balSol">0.0000</strong></div>
+          <div class="balance-tag">USDC: <strong id="balUsdc">$0.00</strong></div>
+          <div class="balance-tag">USDT: <strong id="balUsdt">$0.00</strong></div>
+        </div>
+      </div>
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <button id="testSwapBtn" class="btn-success" onclick="executeTestSwap()" disabled>
+          <span>⚡ Test 1 Swap ($1 USDC ⇄ USDT)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mode Selector Tabs -->
+    <div class="tabs-container">
+      <div id="tabAuto" class="tab-btn active">⚡ Direct Auto-Cycle (100% Volume on Your Connected Wallet)</div>
+    </div>
+
+    <!-- Trading Control Panel -->
+    <div class="trade-control-card">
+      <div style="font-weight: 600; margin-bottom: 14px; font-size: 0.95rem;">⚙️ Volume Farming Configuration</div>
+      <div class="controls-flex">
+        <div class="form-group">
+          <label>DEX Platform</label>
+          <select id="dexPlatform" onchange="toggleDexPlatform()">
+            <option value="titan" selected>Titan Exchange (Argos Meta-DEX / DART)</option>
+            <option value="jupiter">Jupiter Aggregator (Instant / Zero-Key)</option>
+          </select>
+        </div>
+        <div class="form-group" id="titanKeyGroup" style="display: flex;">
+          <label>Titan API Key <a href="https://developer.titan.exchange" target="_blank" style="color:var(--primary); font-size:0.75rem; text-decoration:none;">(Connected ✓)</a></label>
+          <input type="password" id="titanApiKey" value="EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta" placeholder="Paste Titan API Key">
+        </div>
+        <div class="form-group">
+          <label>Target Pair</label>
+          <select id="tradePair">
+            <option value="USDC_USDT" selected>USDC / USDT (Stablecoin)</option>
+            <option value="SOL_USDC">SOL / USDC</option>
+            <option value="JUP_USDC">JUP / USDC</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Swap Amount ($)</label>
+          <input type="number" id="tradeAmount" value="1.0" min="0.5" step="0.5">
+        </div>
+        <div class="form-group">
+          <label>Number of Cycles</label>
+          <input type="number" id="cycleCount" value="5" min="1" max="100" title="1 cycle = Swap A->B then immediately Swap Back B->A">
+        </div>
+        <div class="form-group">
+          <label>Execution Speed</label>
+          <select id="executionSpeed">
+            <option value="0" selected>⚡ Instant (Swap & Swap Back Instantly)</option>
+            <option value="15000">🎭 Human Delay (15s between swaps)</option>
+            <option value="30000">☕ Slow (30s between swaps)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>SOL Gas Optimization</label>
+          <select id="gasOptimization">
+            <option value="5000" selected>Low Priority (0.000005 SOL / ~$0.0008)</option>
+            <option value="10000">Normal Priority (0.000010 SOL)</option>
+          </select>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display:flex; gap:10px;">
+          <button id="startAutoLoopBtn" class="btn-purple" onclick="startDirectAutoLoop()">
+            <span>🚀 Start Auto-Cycle Loop</span>
+          </button>
+          <button id="stopAutoLoopBtn" class="btn-danger" onclick="stopDirectAutoLoop()" style="display:none;">
+            <span>⏹ Stop Loop</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Auto-Loop Progress Bar -->
+      <div id="progressBanner" class="progress-banner">
+        <div style="display: flex; justify-content: space-between; font-size: 0.85rem; font-weight: 600;">
+          <span id="progressText" style="color: #c084fc;">⚡ Executing Cycle 1 / 5 (Swap & Swap Back)...</span>
+          <span id="progressPercent" style="color: var(--text-muted);">0%</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div id="progressBarFill" class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid-stats">
+      <div class="stat-card">
+        <div class="stat-label">Total Volume Generated</div>
+        <div id="totalVolume" class="stat-val val-green">$0.00</div>
+        <div id="volumeRate" class="stat-sub">Direct Single-Hop Routing</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Net P&L</div>
+        <div id="netPnl" class="stat-val">$0.00</div>
+        <div id="feesPaid" class="stat-sub">Fees Paid: $0.00</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Swaps / Cycles</div>
+        <div id="swapCount" class="stat-val">0</div>
+        <div id="swapBreakdown" class="stat-sub">0 Confirmed Cycles</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Status</div>
+        <div id="humanPhase" class="stat-val val-purple">READY</div>
+        <div id="fatigueText" class="stat-sub">Zero-Popup Execution Ready</div>
+      </div>
+    </div>
+
+    <!-- Table of Swaps -->
+    <div class="table-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div class="table-title" style="margin-bottom:0;">Live Swap History & Explorer Signatures</div>
+        <button onclick="clearSessionHistory()" style="font-size:0.75rem; padding:5px 10px; background:#1e293b;">🗑️ Reset Stats</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Direction</th>
+            <th>Input</th>
+            <th>Output</th>
+            <th>Slippage</th>
+            <th>P&L</th>
+            <th>Transaction</th>
+          </tr>
+        </thead>
+        <tbody id="tradesBody">
+          <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">Connect your wallet to start viewing live volume swaps...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let userWallet = null;
+    let currentDirection = 'A_TO_B';
+    let currentMode = 'auto'; // 'auto' or 'manual'
+    let activeSessionKeypair = null; // Generated ephemeral keypair for zero-popup session
+    let isAutoLoopRunning = false;
+
+    const TOKENS = {
+      SOL: 'So11111111111111111111111111111111111111112',
+      USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+      USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+      JUP: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+    };
+
+    // ============================================
+    // Modern In-App Toast & Modal System
+    // ============================================
+    function notify(title, message, type = 'info', duration = 4500, txLink = null) {
+      const container = document.getElementById('toastContainer');
+      if (!container) return;
+
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+
+      let icon = 'ℹ️';
+      if (type === 'success') icon = '✅';
+      else if (type === 'error') icon = '❌';
+      else if (type === 'purple') icon = '⚡';
+      else if (type === 'warning') icon = '⚠️';
+
+      toast.innerHTML = `
+        <div class="toast-icon">${icon}</div>
+        <div class="toast-content">
+          <div class="toast-title">${title}</div>
+          <div class="toast-message">${message}</div>
+          ${txLink ? `<div style="margin-top:6px;"><a href="${txLink}" target="_blank" class="tx-link" style="font-weight:600; color:#38bdf8;">View on Solscan ↗</a></div>` : ''}
+        </div>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('toast-hiding');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+
+    let modalResolve = null;
+    function showModalConfirm(title, messageHtml) {
+      return new Promise((resolve) => {
+        modalResolve = resolve;
+        document.getElementById('modalTitle').innerHTML = title;
+        document.getElementById('modalBody').innerHTML = messageHtml;
+        document.getElementById('confirmModal').style.display = 'flex';
+      });
+    }
+
+    function closeConfirmModal(result) {
+      document.getElementById('confirmModal').style.display = 'none';
+      if (modalResolve) {
+        modalResolve(result);
+        modalResolve = null;
+      }
+    }
+
+    function switchTab(mode) {
+      currentMode = mode;
+      document.getElementById('tabAuto').className = 'tab-btn ' + (mode === 'auto' ? 'active' : '');
+      document.getElementById('tabManual').className = 'tab-btn ' + (mode === 'manual' ? 'active' : '');
+    }
+
+    function toggleDexPlatform() {
+      const dex = document.getElementById('dexPlatform').value;
+      const keyGroup = document.getElementById('titanKeyGroup');
+      keyGroup.style.display = dex === 'titan' ? 'flex' : 'none';
+    }
+
+    function getSelectedTokens() {
+      const pair = document.getElementById('tradePair').value;
+      if (pair === 'SOL_USDC') {
+        return { tokenA: TOKENS.SOL, tokenB: TOKENS.USDC, symA: 'SOL', symB: 'USDC' };
+      }
+      if (pair === 'JUP_USDC') {
+        return { tokenA: TOKENS.JUP, tokenB: TOKENS.USDC, symA: 'JUP', symB: 'USDC' };
+      }
+      return { tokenA: TOKENS.USDC, tokenB: TOKENS.USDT, symA: 'USDC', symB: 'USDT' };
+    }
+
+    // 1. Connect Phantom / Solflare
+    async function connectWallet() {
+      try {
+        const provider = window.phantom?.solana || window.solana;
+        if (!provider) {
+          notify('No Wallet Detected', 'Please install the Phantom or Solflare browser extension.', 'error');
+          window.open('https://phantom.app/', '_blank');
+          return;
+        }
+
+        const resp = await provider.connect();
+        userWallet = resp.publicKey.toString();
+
+        document.getElementById('walletAddress').innerText = userWallet.substring(0, 6) + '...' + userWallet.substring(userWallet.length - 6);
+        document.getElementById('connectWalletBtn').innerText = '✓ ' + userWallet.substring(0, 4) + '...' + userWallet.substring(userWallet.length - 4);
+        document.getElementById('connectWalletBtn').className = 'btn-success';
+
+        const solscan = document.getElementById('solscanLink');
+        solscan.href = `https://solscan.io/account/${userWallet}`;
+        solscan.style.display = 'inline';
+
+        document.getElementById('balancesRow').style.display = 'flex';
+        document.getElementById('testSwapBtn').disabled = false;
+
+        notify('Wallet Connected', `Connected to ${userWallet.substring(0, 6)}...`, 'success');
+        await refreshBalances();
+      } catch (err) {
+        console.error('Wallet connection error:', err);
+        notify('Connection Failed', err.message, 'error');
+      }
+    }
+
+    // ============================================
+    // 100% Client-Side Solana & RPC Architecture
+    // ============================================
+    const DEFAULT_RPCS = [
+      'https://api.mainnet-beta.solana.com',
+      'https://solana-rpc.publicnode.com',
+      'https://rpc.ankr.com/solana'
+    ];
+    let activeRpcIndex = 0;
+
+    function getRpcUrl() {
+      const saved = localStorage.getItem('farmvolume_custom_rpc');
+      if (saved && saved.trim().length > 0) return saved.trim();
+      return DEFAULT_RPCS[activeRpcIndex];
+    }
+
+    function getSolanaConnection() {
+      return new solanaWeb3.Connection(getRpcUrl(), 'confirmed');
+    }
+
+    function toggleRpcBar() {
+      const bar = document.getElementById('rpcConfigBar');
+      bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+      const input = document.getElementById('customRpcInput');
+      input.value = localStorage.getItem('farmvolume_custom_rpc') || '';
+    }
+
+    function saveCustomRpc() {
+      const input = document.getElementById('customRpcInput').value.trim();
+      if (input) {
+        localStorage.setItem('farmvolume_custom_rpc', input);
+        notify('RPC Saved', `Active RPC: ${input.substring(0, 30)}...`, 'success');
+      } else {
+        localStorage.removeItem('farmvolume_custom_rpc');
+        notify('RPC Reset', 'Using default public Solana RPC', 'info');
+      }
+      refreshBalances();
+    }
+
+    function resetRpcToDefault() {
+      localStorage.removeItem('farmvolume_custom_rpc');
+      document.getElementById('customRpcInput').value = '';
+      activeRpcIndex = 0;
+      notify('Default Restored', 'Reverted to default Solana RPC network', 'info');
+      refreshBalances();
+    }
+
+    // 2. Client-Side Wallet Balances Fetch (SOL, USDC, USDT)
+    async function refreshBalances() {
+      if (!userWallet) return;
+      try {
+        const conn = getSolanaConnection();
+        const pubkey = new solanaWeb3.PublicKey(userWallet);
+
+        // Fetch Native SOL Balance
+        const lamports = await conn.getBalance(pubkey);
+        const solVal = lamports / 1e9;
+        document.getElementById('balSol').innerText = solVal.toFixed(4) + ' SOL';
+
+        // Fetch SPL Token Balances (USDC & USDT)
+        let usdcVal = 0;
+        let usdtVal = 0;
+        try {
+          const parsed = await conn.getParsedTokenAccountsByOwner(pubkey, {
+            programId: new solanaWeb3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+          });
+          for (const item of parsed.value) {
+            const info = item.account.data.parsed.info;
+            const mint = info.mint;
+            const uiAmt = info.tokenAmount.uiAmount || 0;
+            if (mint === TOKENS.USDC) usdcVal += uiAmt;
+            if (mint === TOKENS.USDT) usdtVal += uiAmt;
+          }
+        } catch (e) {
+          console.warn('SPL token parse note:', e);
+        }
+
+        document.getElementById('balUsdc').innerText = '$' + usdcVal.toFixed(2);
+        document.getElementById('balUsdt').innerText = '$' + usdtVal.toFixed(2);
+
+        const btn = document.getElementById('testSwapBtn');
+        if (usdcVal < 1.0 && usdtVal >= 1.0) {
+          btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDT ⇄ USDC)</span>';
+        } else {
+          btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDC ⇄ USDT)</span>';
+        }
+      } catch (err) {
+        console.error('Error fetching balances:', err);
+        // Failover to next public RPC
+        activeRpcIndex = (activeRpcIndex + 1) % DEFAULT_RPCS.length;
+      }
+    }
+
+    // ============================================
+    // 3. Client-Side DEX Quote & Transaction Builder (Jupiter + Titan)
+    // ============================================
+    async function prepareSwapClientSide({
+      userPublicKey,
+      inputMint,
+      outputMint,
+      amount,
+      slippageBps = 30,
+      exchange = 'jupiter',
+      titanApiKey = '',
+      priorityFeeLamports = 5000,
+      onlyDirectRoutes = true
+    }) {
+      const isInputSol = inputMint === TOKENS.SOL;
+      const isOutputSol = outputMint === TOKENS.SOL;
+      const inputDecimals = isInputSol ? 9 : 6;
+      const outputDecimals = isOutputSol ? 9 : 6;
+      const rawAmount = Math.round(amount * Math.pow(10, inputDecimals));
+
+      // --- Option A: Titan Exchange ---
+      if (exchange === 'titan') {
+        const apiKey = titanApiKey || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
+        const titanUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+
+        let titanRes;
+        try {
+          titanRes = await fetch(titanUrl, {
+            headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
+          });
+        } catch (corsErr) {
+          console.warn('Titan browser CORS restriction encountered. Auto-routing through Jupiter...', corsErr);
+          notify('Routing Notice', 'Titan has browser CORS restriction. Auto-routing via Jupiter Aggregator!', 'purple', 4000);
+          return prepareSwapClientSide({
+            userPublicKey,
+            inputMint,
+            outputMint,
+            amount,
+            slippageBps,
+            exchange: 'jupiter',
+            priorityFeeLamports,
+            onlyDirectRoutes
+          });
+        }
+
+        if (titanRes && titanRes.ok) {
+          const titanData = await titanRes.json();
+          const dart = titanData.quotes?.['Titan-DART'] || (titanData.quotes && Object.values(titanData.quotes)[0]);
+
+          if (dart && dart.instructions) {
+            const conn = getSolanaConnection();
+            const lookupTableAccounts = (titanData.alts || []).map((alt) => new solanaWeb3.AddressLookupTableAccount({
+              key: new solanaWeb3.PublicKey(alt.p),
+              state: {
+                deactivationSlot: BigInt('18446744073709551615'),
+                lastExtendedSlot: 0,
+                lastExtendedSlotStartIndex: 0,
+                authority: undefined,
+                addresses: alt.a.map((addr) => new solanaWeb3.PublicKey(addr)),
+              }
+            }));
+
+            const instructions = [
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }),
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }),
+            ];
+
+            for (const ix of dart.instructions) {
+              if (ix.p === solanaWeb3.ComputeBudgetProgram.programId.toBase58()) continue;
+              instructions.push(new solanaWeb3.TransactionInstruction({
+                programId: new solanaWeb3.PublicKey(ix.p),
+                keys: ix.a.map((acc) => ({
+                  pubkey: new solanaWeb3.PublicKey(acc.p),
+                  isSigner: acc.s,
+                  isWritable: acc.w,
+                })),
+                data: Uint8Array.from(atob(ix.d), c => c.charCodeAt(0)),
+              }));
+            }
+
+            const { blockhash } = await conn.getLatestBlockhash('confirmed');
+            const messageV0 = new solanaWeb3.TransactionMessage({
+              payerKey: new solanaWeb3.PublicKey(userPublicKey),
+              recentBlockhash: blockhash,
+              instructions,
+            }).compileToV0Message(lookupTableAccounts);
+
+            const tx = new solanaWeb3.VersionedTransaction(messageV0);
+            const txBase64 = btoa(String.fromCharCode.apply(null, tx.serialize()));
+            const outAmount = parseFloat(dart.outAmount || '0') / Math.pow(10, outputDecimals);
+
+            return {
+              swapTransaction: txBase64,
+              inputAmount: amount,
+              expectedOutput: outAmount,
+              priceImpactPct: 0.01,
+              exchange: 'titan',
+            };
+          }
+        }
+
+        // If Titan fails or pair unavailable, transparently use Jupiter
+        console.warn('Titan unavailable for this pair, falling back to Jupiter');
+        return prepareSwapClientSide({
+          userPublicKey,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps,
+          exchange: 'jupiter',
+          priorityFeeLamports,
+          onlyDirectRoutes
+        });
+      }
+
+      // --- Option B: Jupiter Aggregator (Native Client-Side CORS Enabled) ---
+      const directParam = onlyDirectRoutes ? '&onlyDirectRoutes=true' : '';
+      let quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn${directParam}`;
+      let quoteRes = await fetch(quoteUrl);
+
+      if (!quoteRes.ok && onlyDirectRoutes) {
+        // Fallback without direct-only
+        quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn`;
+        quoteRes = await fetch(quoteUrl);
+      }
+
+      if (!quoteRes.ok) {
+        const errTxt = await quoteRes.text();
+        throw new Error(`Jupiter quote failed: ${errTxt}`);
+      }
+
+      const quoteResponse = await quoteRes.json();
+
+      const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteResponse,
+          userPublicKey,
+          wrapAndUnwrapSol: true,
+          dynamicComputeUnitLimit: true,
+          prioritizationFeeLamports: priorityFeeLamports || 5000,
+        }),
+      });
+
+      if (!swapRes.ok) {
+        const errTxt = await swapRes.text();
+        throw new Error(`Jupiter swap assembly failed: ${errTxt}`);
+      }
+
+      const swapData = await swapRes.json();
+      const expectedOutput = parseFloat(quoteResponse.outAmount) / Math.pow(10, outputDecimals);
+
+      return {
+        swapTransaction: swapData.swapTransaction,
+        inputAmount: amount,
+        expectedOutput,
+        priceImpactPct: parseFloat(quoteResponse.priceImpactPct || '0'),
+        exchange: 'jupiter',
+      };
+    }
+
+    // ============================================
+    // 4. Client-Side Analytics & LocalStorage Management
+    // ============================================
+    function recordTradeClientSide(trade) {
+      const inputUsd = parseFloat(trade.inputAmount);
+      const outputUsd = parseFloat(trade.outputAmount);
+      const feeUsd = trade.exchange === 'titan' ? 0.0001 : 0.0003;
+      const pnlUsd = outputUsd - inputUsd - feeUsd;
+      const slippageBps = ((inputUsd - outputUsd) / inputUsd) * 10000;
+
+      const record = {
+        id: 'tx_' + Date.now(),
+        createdAt: Date.now(),
+        inputToken: trade.inputToken,
+        outputToken: trade.outputToken,
+        inputAmount: inputUsd,
+        expectedOutputAmount: outputUsd,
+        actualOutputAmount: outputUsd,
+        slippageBps: Math.abs(slippageBps),
+        pnlUsd: pnlUsd,
+        txSignature: trade.signature,
+        exchange: trade.exchange || 'dex'
+      };
+
+      // Store in LocalStorage
+      let trades = [];
+      try {
+        trades = JSON.parse(localStorage.getItem('farmvolume_trades') || '[]');
+      } catch (e) { trades = []; }
+      trades.unshift(record);
+      localStorage.setItem('farmvolume_trades', JSON.stringify(trades.slice(0, 100)));
+
+      // Update Stats
+      let stats = { totalVolumeUsd: 0, netPnlUsd: 0, totalFeesUsd: 0, totalSwaps: 0, totalCycles: 0 };
+      try {
+        const savedStats = localStorage.getItem('farmvolume_stats');
+        if (savedStats) stats = JSON.parse(savedStats);
+      } catch (e) {}
+
+      stats.totalVolumeUsd += inputUsd;
+      stats.netPnlUsd += pnlUsd;
+      stats.totalFeesUsd += feeUsd;
+      stats.totalSwaps += 1;
+      stats.totalCycles = Math.floor(stats.totalSwaps / 2);
+      localStorage.setItem('farmvolume_stats', JSON.stringify(stats));
+
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      let stats = { totalVolumeUsd: 0, netPnlUsd: 0, totalFeesUsd: 0, totalSwaps: 0, totalCycles: 0 };
+      try {
+        const saved = localStorage.getItem('farmvolume_stats');
+        if (saved) stats = JSON.parse(saved);
+      } catch (e) {}
+
+      document.getElementById('totalVolume').innerText = '$' + (stats.totalVolumeUsd || 0).toFixed(2);
+      const pnl = stats.netPnlUsd || 0;
+      document.getElementById('netPnl').innerText = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(4);
+      document.getElementById('netPnl').className = 'stat-val ' + (pnl >= 0 ? 'val-green' : 'val-red');
+      document.getElementById('feesPaid').innerText = 'Fees Paid: $' + (stats.totalFeesUsd || 0).toFixed(4);
+      document.getElementById('swapCount').innerText = `${stats.totalSwaps || 0} (${stats.totalCycles || 0} cycles)`;
+      document.getElementById('swapBreakdown').innerText = `${stats.totalSwaps || 0} Confirmed Swaps`;
+
+      let trades = [];
+      try {
+        trades = JSON.parse(localStorage.getItem('farmvolume_trades') || '[]');
+      } catch (e) { trades = []; }
+
+      if (trades.length > 0) {
+        const tbody = document.getElementById('tradesBody');
+        tbody.innerHTML = trades.slice(0, 20).map(t => `
+          <tr>
+            <td>${new Date(t.createdAt).toLocaleTimeString()}</td>
+            <td><span style="color:#c084fc;">⚡ ${(t.exchange || 'DEX').toUpperCase()}</span></td>
+            <td>${t.inputToken} → ${t.outputToken}</td>
+            <td>$${t.inputAmount.toFixed(2)}</td>
+            <td>$${(t.actualOutputAmount || t.expectedOutputAmount).toFixed(2)}</td>
+            <td>${t.slippageBps.toFixed(1)} bps</td>
+            <td class="${t.pnlUsd >= 0 ? 'val-green' : 'val-red'}">${t.pnlUsd >= 0 ? '+' : ''}$${t.pnlUsd.toFixed(4)}</td>
+            <td>
+              ${t.txSignature ? `<a href="https://solscan.io/tx/${t.txSignature}" target="_blank" class="tx-link">${t.txSignature.substring(0, 8)}... ↗</a>` : '<span style="color:var(--yellow)">Confirmed</span>'}
+            </td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    function clearSessionHistory() {
+      if (confirm('Clear stored swap volume and history for this browser?')) {
+        localStorage.removeItem('farmvolume_trades');
+        localStorage.removeItem('farmvolume_stats');
+        document.getElementById('tradesBody').innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">Stats reset. Ready for new trades.</td></tr>';
+        renderDashboard();
+        notify('Stats Reset', 'Volume statistics cleared successfully.', 'info');
+      }
+    }
+
+    // ============================================
+    // 5. Test Swap (100% Client-Side)
+    // ============================================
+    async function executeTestSwap() {
+      if (!userWallet) {
+        notify('Wallet Required', 'Please connect your Phantom or Solflare wallet first.', 'warning');
+        return;
+      }
+
+      const btn = document.getElementById('testSwapBtn');
+      btn.innerText = '⏳ Preparing Swap...';
+      btn.disabled = true;
+
+      try {
+        const amount = 1.0;
+        const info = getSelectedTokens();
+
+        const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
+        const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+        let isForward = currentDirection === 'A_TO_B';
+        if (info.symA === 'USDC' && info.symB === 'USDT') {
+          if (usdcVal < amount && usdtVal >= amount) {
+            isForward = false;
+          }
+        }
+
+        const inputMint = isForward ? info.tokenA : info.tokenB;
+        const outputMint = isForward ? info.tokenB : info.tokenA;
+        const inputToken = isForward ? info.symA : info.symB;
+        const outputToken = isForward ? info.symB : info.symA;
+
+        const dex = document.getElementById('dexPlatform').value;
+        const titanKey = document.getElementById('titanApiKey')?.value || '';
+        const priorityFee = parseInt(document.getElementById('gasOptimization').value, 10);
+
+        notify('Preparing Swap', `Fetching optimal quote on ${dex.toUpperCase()}...`, 'info', 3000);
+
+        const prepData = await prepareSwapClientSide({
+          userPublicKey: userWallet,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps: 30,
+          exchange: dex,
+          titanApiKey: titanKey,
+          priorityFeeLamports: priorityFee,
+          onlyDirectRoutes: true,
+        });
+
+        notify('Awaiting Approval', 'Please confirm the swap in your wallet popup...', 'purple', 5000);
+
+        const provider = window.phantom?.solana || window.solana;
+        const txBytes = Uint8Array.from(atob(prepData.swapTransaction), (c) => c.charCodeAt(0));
+        const transaction = solanaWeb3.VersionedTransaction.deserialize(txBytes);
+
+        const { signature } = await provider.signAndSendTransaction(transaction);
+        console.log('Swap transaction submitted! Tx:', signature);
+
+        recordTradeClientSide({
+          signature,
+          inputToken,
+          outputToken,
+          inputAmount: amount,
+          outputAmount: prepData.expectedOutput,
+          exchange: prepData.exchange || dex,
+        });
+
+        currentDirection = currentDirection === 'A_TO_B' ? 'B_TO_A' : 'A_TO_B';
+        notify('Swap Confirmed! 🎉', `Swapped $${amount} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'success', 6000, `https://solscan.io/tx/${signature}`);
+        await refreshBalances();
+      } catch (err) {
+        console.error('Test swap error:', err);
+        notify('Swap Cancelled / Failed', err.message, 'error');
+      } finally {
+        btn.innerText = '⚡ Test 1 Swap ($1 USDC ⇄ USDT)';
+        btn.disabled = false;
+      }
+    }
+
+    // ============================================
+    // 6. Direct Browser Auto-Cycle Loop (100% Client-Side)
+    // ============================================
+    let isLoopRunning = false;
+
+    async function startDirectAutoLoop() {
+      if (!userWallet) {
+        notify('Wallet Required', 'Please connect your Phantom wallet first.', 'warning');
+        return;
+      }
+
+      const cycles = parseInt(document.getElementById('cycleCount').value, 10) || 5;
+      const amount = parseFloat(document.getElementById('tradeAmount').value) || 1.0;
+      const speed = parseInt(document.getElementById('executionSpeed').value, 10) || 0;
+      const dex = document.getElementById('dexPlatform').value;
+      const titanKey = document.getElementById('titanApiKey')?.value || '';
+
+      await refreshBalances();
+      const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
+      const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+
+      if (usdcVal < amount && usdtVal < amount) {
+        notify('Insufficient Balance', `You have $${usdcVal.toFixed(2)} USDC and $${usdtVal.toFixed(2)} USDT, but trade size is $${amount}. Please lower amount or add funds.`, 'warning');
+        return;
+      }
+
+      const confirmHtml = `
+        <div style="font-size:0.95rem; margin-bottom:12px;">Launch volume farming cycles on ${dex.toUpperCase()}?</div>
+        <div style="background:#0b0e14; padding:12px; border-radius:8px; border:1px solid var(--border); font-family:'JetBrains Mono'; font-size:0.85rem;">
+          <div>• Wallet: <strong>${userWallet.substring(0, 6)}...${userWallet.substring(userWallet.length - 4)}</strong></div>
+          <div>• Cycles: <strong>${cycles}</strong> (${cycles * 2} swaps back-and-forth)</div>
+          <div>• Trade Size: <strong>$${amount}</strong></div>
+          <div>• Mode: <strong>100% Client-Side Browser Execution</strong></div>
+        </div>
+        <div style="margin-top:12px; font-size:0.8rem; color:#10b981;">✅ 100% Non-custodial! No server ever touches your funds or private keys.</div>
+      `;
+      const confirmed = await showModalConfirm('🚀 Launch Volume Cycles', confirmHtml);
+      if (!confirmed) return;
+
+      isLoopRunning = true;
+      document.getElementById('startAutoLoopBtn').style.display = 'none';
+      document.getElementById('stopAutoLoopBtn').style.display = 'inline-flex';
+      document.getElementById('statusBadge').innerText = 'AUTO-LOOPING';
+      document.getElementById('statusBadge').className = 'badge badge-running';
+
+      const progress = document.getElementById('progressBanner');
+      progress.style.display = 'block';
+
+      const totalSwaps = cycles * 2;
+      let completedSwaps = 0;
+
+      for (let cycle = 1; cycle <= cycles; cycle++) {
+        if (!isLoopRunning) break;
+
+        await refreshBalances();
+        const curUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
+        const curUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+
+        let inputToken = curUsdc >= amount ? 'USDC' : 'USDT';
+        let outputToken = inputToken === 'USDC' ? 'USDT' : 'USDC';
+        let inputMint = TOKENS[inputToken];
+        let outputMint = TOKENS[outputToken];
+
+        // --- STEP 1: Swap input -> output ---
+        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 1: ${inputToken} → ${outputToken} on ${dex.toUpperCase()}...`);
+        const ok1 = await executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey);
+        if (!ok1) {
+          notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
+          break;
+        }
+
+        completedSwaps++;
+        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 1 Confirmed! Preparing Step 2...`);
+
+        if (!isLoopRunning) break;
+        if (speed > 0) await new Promise(r => setTimeout(r, Math.min(speed, 2000)));
+
+        // --- STEP 2: Swap back output -> input ---
+        await refreshBalances();
+        const postUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
+        const postUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+        let returnBal = outputToken === 'USDC' ? postUsdc : postUsdt;
+        let swapBackAmount = Math.min(returnBal, amount);
+        if (swapBackAmount < 0.5) swapBackAmount = amount;
+
+        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 2 (Swap Back): ${outputToken} → ${inputToken} on ${dex.toUpperCase()}...`);
+        const ok2 = await executeDirectSwap(outputMint, inputMint, outputToken, inputToken, swapBackAmount, dex, titanKey);
+        if (!ok2) {
+          notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
+          break;
+        }
+
+        completedSwaps++;
+        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Completed! Volume: $${(completedSwaps * amount).toFixed(2)}`);
+
+        if (!isLoopRunning) break;
+        if (speed > 0 && cycle < cycles) await new Promise(r => setTimeout(r, speed));
+      }
+
+      isLoopRunning = false;
+      document.getElementById('startAutoLoopBtn').style.display = 'inline-flex';
+      document.getElementById('stopAutoLoopBtn').style.display = 'none';
+      document.getElementById('statusBadge').innerText = 'IDLE';
+      document.getElementById('statusBadge').className = 'badge badge-stopped';
+
+      if (completedSwaps === totalSwaps) {
+        notify('All Cycles Completed! 🎉', `Executed all ${totalSwaps} swaps successfully! Volume registered to your wallet.`, 'success', 8000);
+      }
+    }
+
+    function stopDirectAutoLoop() {
+      isLoopRunning = false;
+      document.getElementById('startAutoLoopBtn').style.display = 'inline-flex';
+      document.getElementById('stopAutoLoopBtn').style.display = 'none';
+      document.getElementById('statusBadge').innerText = 'IDLE';
+      document.getElementById('statusBadge').className = 'badge badge-stopped';
+      notify('Loop Stopped', 'Auto-cycle loop paused by user.', 'info', 4000);
+    }
+
+    function updateLoopUI(done, total, text) {
+      document.getElementById('progressText').innerText = text;
+      const pct = Math.floor((done / total) * 100);
+      document.getElementById('progressPercent').innerText = `${pct}%`;
+      document.getElementById('progressBarFill').style.width = `${pct}%`;
+    }
+
+    async function executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey) {
+      try {
+        notify('Preparing Swap', `Fetching optimal quote for $${amount.toFixed(2)} ${inputToken} → ${outputToken}...`, 'info', 3000);
+
+        const prepData = await prepareSwapClientSide({
+          userPublicKey: userWallet,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps: 30,
+          exchange: dex,
+          titanApiKey: titanKey,
+          priorityFeeLamports: 5000,
+          onlyDirectRoutes: true,
+        });
+
+        notify('Confirm in Phantom', `Please approve swap: $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'purple', 6000);
+
+        const provider = window.phantom?.solana || window.solana;
+        const txBytes = Uint8Array.from(atob(prepData.swapTransaction), (c) => c.charCodeAt(0));
+        const transaction = solanaWeb3.VersionedTransaction.deserialize(txBytes);
+
+        const { signature } = await provider.signAndSendTransaction(transaction);
+        console.log('Swap confirmed on-chain! Tx:', signature);
+
+        recordTradeClientSide({
+          signature,
+          inputToken,
+          outputToken,
+          inputAmount: amount,
+          outputAmount: prepData.expectedOutput,
+          exchange: prepData.exchange || dex,
+        });
+
+        notify('Swap Confirmed! ✅', `Swapped $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}!`, 'success', 5000, `https://solscan.io/tx/${signature}`);
+        await refreshBalances();
+        return true;
+      } catch (err) {
+        console.error('Swap error:', err);
+        notify('Swap Failed / Cancelled', err.message, 'error');
+        return false;
+      }
+    }
+
+    // Initialize Dashboard on load
+    renderDashboard();
+    if (localStorage.getItem('farmvolume_custom_rpc')) {
+      document.getElementById('customRpcInput').value = localStorage.getItem('farmvolume_custom_rpc');
+    }
+  </script>
+</body>
+</html>

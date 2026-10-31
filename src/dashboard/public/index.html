@@ -340,14 +340,27 @@
       <div class="brand">
         <h1>⚡ FarmVolume</h1>
         <span id="statusBadge" class="badge badge-stopped">IDLE</span>
-        <span class="badge badge-human">Zero-Popup Mode Ready</span>
+        <span class="badge badge-human">100% Client-Side Web3</span>
+        <span class="badge badge-running">Zero Backend Required</span>
       </div>
       <div class="header-actions">
+        <button id="rpcBtn" onclick="toggleRpcBar()" style="font-size:0.8rem; padding:7px 12px;">⚙️ RPC Config</button>
         <button id="connectWalletBtn" class="btn-primary" onclick="connectWallet()">
           <span>🦊 Connect Phantom / Solflare</span>
         </button>
       </div>
     </header>
+
+    <!-- Optional RPC Settings Bar -->
+    <div id="rpcConfigBar" style="display:none; background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:20px;">
+      <div style="font-weight:600; font-size:0.85rem; margin-bottom:8px; color:var(--text);">🌐 Solana RPC Endpoint Configuration (Client-Side)</div>
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="customRpcInput" placeholder="https://api.mainnet-beta.solana.com (or your private Helius/QuickNode RPC)" style="flex:1; min-width:280px; background:#0b0e14; border:1px solid var(--border); color:var(--text); padding:8px 12px; border-radius:6px; font-family:'JetBrains Mono'; font-size:0.85rem;">
+        <button class="btn-primary" onclick="saveCustomRpc()" style="padding:7px 14px; font-size:0.85rem;">Save & Reconnect</button>
+        <button onclick="resetRpcToDefault()" style="padding:7px 14px; font-size:0.85rem;">Reset Default</button>
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); margin-top:6px;">Default uses multi-RPC failover with automatic public rotation. Add your own RPC for ultra-fast confirmation.</div>
+    </div>
 
     <!-- Connected Wallet Banner -->
     <div class="wallet-banner">
@@ -471,7 +484,10 @@
 
     <!-- Table of Swaps -->
     <div class="table-card">
-      <div class="table-title">Live Swap History & Explorer Signatures</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <div class="table-title" style="margin-bottom:0;">Live Swap History & Explorer Signatures</div>
+        <button onclick="clearSessionHistory()" style="font-size:0.75rem; padding:5px 10px; background:#1e293b;">🗑️ Reset Stats</button>
+      </div>
       <table>
         <thead>
           <tr>
@@ -612,30 +628,362 @@
       }
     }
 
-    // 2. Refresh Wallet Balances
+    // ============================================
+    // 100% Client-Side Solana & RPC Architecture
+    // ============================================
+    const DEFAULT_RPCS = [
+      'https://api.mainnet-beta.solana.com',
+      'https://solana-rpc.publicnode.com',
+      'https://rpc.ankr.com/solana'
+    ];
+    let activeRpcIndex = 0;
+
+    function getRpcUrl() {
+      const saved = localStorage.getItem('farmvolume_custom_rpc');
+      if (saved && saved.trim().length > 0) return saved.trim();
+      return DEFAULT_RPCS[activeRpcIndex];
+    }
+
+    function getSolanaConnection() {
+      return new solanaWeb3.Connection(getRpcUrl(), 'confirmed');
+    }
+
+    function toggleRpcBar() {
+      const bar = document.getElementById('rpcConfigBar');
+      bar.style.display = bar.style.display === 'none' ? 'block' : 'none';
+      const input = document.getElementById('customRpcInput');
+      input.value = localStorage.getItem('farmvolume_custom_rpc') || '';
+    }
+
+    function saveCustomRpc() {
+      const input = document.getElementById('customRpcInput').value.trim();
+      if (input) {
+        localStorage.setItem('farmvolume_custom_rpc', input);
+        notify('RPC Saved', `Active RPC: ${input.substring(0, 30)}...`, 'success');
+      } else {
+        localStorage.removeItem('farmvolume_custom_rpc');
+        notify('RPC Reset', 'Using default public Solana RPC', 'info');
+      }
+      refreshBalances();
+    }
+
+    function resetRpcToDefault() {
+      localStorage.removeItem('farmvolume_custom_rpc');
+      document.getElementById('customRpcInput').value = '';
+      activeRpcIndex = 0;
+      notify('Default Restored', 'Reverted to default Solana RPC network', 'info');
+      refreshBalances();
+    }
+
+    // 2. Client-Side Wallet Balances Fetch (SOL, USDC, USDT)
     async function refreshBalances() {
       if (!userWallet) return;
       try {
-        const res = await fetch(`/api/wallet-balances?pubkey=${userWallet}`);
-        const data = await res.json();
-        if (data.error) return;
+        const conn = getSolanaConnection();
+        const pubkey = new solanaWeb3.PublicKey(userWallet);
 
-        document.getElementById('balSol').innerText = data.sol.toFixed(4) + ' SOL';
-        document.getElementById('balUsdc').innerText = '$' + data.usdc.toFixed(2);
-        document.getElementById('balUsdt').innerText = '$' + data.usdt.toFixed(2);
+        // Fetch Native SOL Balance
+        const lamports = await conn.getBalance(pubkey);
+        const solVal = lamports / 1e9;
+        document.getElementById('balSol').innerText = solVal.toFixed(4) + ' SOL';
+
+        // Fetch SPL Token Balances (USDC & USDT)
+        let usdcVal = 0;
+        let usdtVal = 0;
+        try {
+          const parsed = await conn.getParsedTokenAccountsByOwner(pubkey, {
+            programId: new solanaWeb3.PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+          });
+          for (const item of parsed.value) {
+            const info = item.account.data.parsed.info;
+            const mint = info.mint;
+            const uiAmt = info.tokenAmount.uiAmount || 0;
+            if (mint === TOKENS.USDC) usdcVal += uiAmt;
+            if (mint === TOKENS.USDT) usdtVal += uiAmt;
+          }
+        } catch (e) {
+          console.warn('SPL token parse note:', e);
+        }
+
+        document.getElementById('balUsdc').innerText = '$' + usdcVal.toFixed(2);
+        document.getElementById('balUsdt').innerText = '$' + usdtVal.toFixed(2);
 
         const btn = document.getElementById('testSwapBtn');
-        if (data.usdc < 1.0 && data.usdt >= 1.0) {
+        if (usdcVal < 1.0 && usdtVal >= 1.0) {
           btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDT ⇄ USDC)</span>';
         } else {
           btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDC ⇄ USDT)</span>';
         }
       } catch (err) {
         console.error('Error fetching balances:', err);
+        // Failover to next public RPC
+        activeRpcIndex = (activeRpcIndex + 1) % DEFAULT_RPCS.length;
       }
     }
 
-    // 3. Single Test Swap (with low priority fee and direct routes)
+    // ============================================
+    // 3. Client-Side DEX Quote & Transaction Builder (Jupiter + Titan)
+    // ============================================
+    async function prepareSwapClientSide({
+      userPublicKey,
+      inputMint,
+      outputMint,
+      amount,
+      slippageBps = 30,
+      exchange = 'jupiter',
+      titanApiKey = '',
+      priorityFeeLamports = 5000,
+      onlyDirectRoutes = true
+    }) {
+      const isInputSol = inputMint === TOKENS.SOL;
+      const isOutputSol = outputMint === TOKENS.SOL;
+      const inputDecimals = isInputSol ? 9 : 6;
+      const outputDecimals = isOutputSol ? 9 : 6;
+      const rawAmount = Math.round(amount * Math.pow(10, inputDecimals));
+
+      // --- Option A: Titan Exchange ---
+      if (exchange === 'titan') {
+        const apiKey = titanApiKey || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
+        const titanUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+
+        let titanRes;
+        try {
+          titanRes = await fetch(titanUrl, {
+            headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
+          });
+        } catch (corsErr) {
+          console.warn('Titan browser CORS restriction encountered. Auto-routing through Jupiter...', corsErr);
+          notify('Routing Notice', 'Titan has browser CORS restriction. Auto-routing via Jupiter Aggregator!', 'purple', 4000);
+          return prepareSwapClientSide({
+            userPublicKey,
+            inputMint,
+            outputMint,
+            amount,
+            slippageBps,
+            exchange: 'jupiter',
+            priorityFeeLamports,
+            onlyDirectRoutes
+          });
+        }
+
+        if (titanRes && titanRes.ok) {
+          const titanData = await titanRes.json();
+          const dart = titanData.quotes?.['Titan-DART'] || (titanData.quotes && Object.values(titanData.quotes)[0]);
+
+          if (dart && dart.instructions) {
+            const conn = getSolanaConnection();
+            const lookupTableAccounts = (titanData.alts || []).map((alt) => new solanaWeb3.AddressLookupTableAccount({
+              key: new solanaWeb3.PublicKey(alt.p),
+              state: {
+                deactivationSlot: BigInt('18446744073709551615'),
+                lastExtendedSlot: 0,
+                lastExtendedSlotStartIndex: 0,
+                authority: undefined,
+                addresses: alt.a.map((addr) => new solanaWeb3.PublicKey(addr)),
+              }
+            }));
+
+            const instructions = [
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }),
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }),
+            ];
+
+            for (const ix of dart.instructions) {
+              if (ix.p === solanaWeb3.ComputeBudgetProgram.programId.toBase58()) continue;
+              instructions.push(new solanaWeb3.TransactionInstruction({
+                programId: new solanaWeb3.PublicKey(ix.p),
+                keys: ix.a.map((acc) => ({
+                  pubkey: new solanaWeb3.PublicKey(acc.p),
+                  isSigner: acc.s,
+                  isWritable: acc.w,
+                })),
+                data: Uint8Array.from(atob(ix.d), c => c.charCodeAt(0)),
+              }));
+            }
+
+            const { blockhash } = await conn.getLatestBlockhash('confirmed');
+            const messageV0 = new solanaWeb3.TransactionMessage({
+              payerKey: new solanaWeb3.PublicKey(userPublicKey),
+              recentBlockhash: blockhash,
+              instructions,
+            }).compileToV0Message(lookupTableAccounts);
+
+            const tx = new solanaWeb3.VersionedTransaction(messageV0);
+            const txBase64 = btoa(String.fromCharCode.apply(null, tx.serialize()));
+            const outAmount = parseFloat(dart.outAmount || '0') / Math.pow(10, outputDecimals);
+
+            return {
+              swapTransaction: txBase64,
+              inputAmount: amount,
+              expectedOutput: outAmount,
+              priceImpactPct: 0.01,
+              exchange: 'titan',
+            };
+          }
+        }
+
+        // If Titan fails or pair unavailable, transparently use Jupiter
+        console.warn('Titan unavailable for this pair, falling back to Jupiter');
+        return prepareSwapClientSide({
+          userPublicKey,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps,
+          exchange: 'jupiter',
+          priorityFeeLamports,
+          onlyDirectRoutes
+        });
+      }
+
+      // --- Option B: Jupiter Aggregator (Native Client-Side CORS Enabled) ---
+      const directParam = onlyDirectRoutes ? '&onlyDirectRoutes=true' : '';
+      let quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn${directParam}`;
+      let quoteRes = await fetch(quoteUrl);
+
+      if (!quoteRes.ok && onlyDirectRoutes) {
+        // Fallback without direct-only
+        quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn`;
+        quoteRes = await fetch(quoteUrl);
+      }
+
+      if (!quoteRes.ok) {
+        const errTxt = await quoteRes.text();
+        throw new Error(`Jupiter quote failed: ${errTxt}`);
+      }
+
+      const quoteResponse = await quoteRes.json();
+
+      const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteResponse,
+          userPublicKey,
+          wrapAndUnwrapSol: true,
+          dynamicComputeUnitLimit: true,
+          prioritizationFeeLamports: priorityFeeLamports || 5000,
+        }),
+      });
+
+      if (!swapRes.ok) {
+        const errTxt = await swapRes.text();
+        throw new Error(`Jupiter swap assembly failed: ${errTxt}`);
+      }
+
+      const swapData = await swapRes.json();
+      const expectedOutput = parseFloat(quoteResponse.outAmount) / Math.pow(10, outputDecimals);
+
+      return {
+        swapTransaction: swapData.swapTransaction,
+        inputAmount: amount,
+        expectedOutput,
+        priceImpactPct: parseFloat(quoteResponse.priceImpactPct || '0'),
+        exchange: 'jupiter',
+      };
+    }
+
+    // ============================================
+    // 4. Client-Side Analytics & LocalStorage Management
+    // ============================================
+    function recordTradeClientSide(trade) {
+      const inputUsd = parseFloat(trade.inputAmount);
+      const outputUsd = parseFloat(trade.outputAmount);
+      const feeUsd = trade.exchange === 'titan' ? 0.0001 : 0.0003;
+      const pnlUsd = outputUsd - inputUsd - feeUsd;
+      const slippageBps = ((inputUsd - outputUsd) / inputUsd) * 10000;
+
+      const record = {
+        id: 'tx_' + Date.now(),
+        createdAt: Date.now(),
+        inputToken: trade.inputToken,
+        outputToken: trade.outputToken,
+        inputAmount: inputUsd,
+        expectedOutputAmount: outputUsd,
+        actualOutputAmount: outputUsd,
+        slippageBps: Math.abs(slippageBps),
+        pnlUsd: pnlUsd,
+        txSignature: trade.signature,
+        exchange: trade.exchange || 'dex'
+      };
+
+      // Store in LocalStorage
+      let trades = [];
+      try {
+        trades = JSON.parse(localStorage.getItem('farmvolume_trades') || '[]');
+      } catch (e) { trades = []; }
+      trades.unshift(record);
+      localStorage.setItem('farmvolume_trades', JSON.stringify(trades.slice(0, 100)));
+
+      // Update Stats
+      let stats = { totalVolumeUsd: 0, netPnlUsd: 0, totalFeesUsd: 0, totalSwaps: 0, totalCycles: 0 };
+      try {
+        const savedStats = localStorage.getItem('farmvolume_stats');
+        if (savedStats) stats = JSON.parse(savedStats);
+      } catch (e) {}
+
+      stats.totalVolumeUsd += inputUsd;
+      stats.netPnlUsd += pnlUsd;
+      stats.totalFeesUsd += feeUsd;
+      stats.totalSwaps += 1;
+      stats.totalCycles = Math.floor(stats.totalSwaps / 2);
+      localStorage.setItem('farmvolume_stats', JSON.stringify(stats));
+
+      renderDashboard();
+    }
+
+    function renderDashboard() {
+      let stats = { totalVolumeUsd: 0, netPnlUsd: 0, totalFeesUsd: 0, totalSwaps: 0, totalCycles: 0 };
+      try {
+        const saved = localStorage.getItem('farmvolume_stats');
+        if (saved) stats = JSON.parse(saved);
+      } catch (e) {}
+
+      document.getElementById('totalVolume').innerText = '$' + (stats.totalVolumeUsd || 0).toFixed(2);
+      const pnl = stats.netPnlUsd || 0;
+      document.getElementById('netPnl').innerText = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(4);
+      document.getElementById('netPnl').className = 'stat-val ' + (pnl >= 0 ? 'val-green' : 'val-red');
+      document.getElementById('feesPaid').innerText = 'Fees Paid: $' + (stats.totalFeesUsd || 0).toFixed(4);
+      document.getElementById('swapCount').innerText = `${stats.totalSwaps || 0} (${stats.totalCycles || 0} cycles)`;
+      document.getElementById('swapBreakdown').innerText = `${stats.totalSwaps || 0} Confirmed Swaps`;
+
+      let trades = [];
+      try {
+        trades = JSON.parse(localStorage.getItem('farmvolume_trades') || '[]');
+      } catch (e) { trades = []; }
+
+      if (trades.length > 0) {
+        const tbody = document.getElementById('tradesBody');
+        tbody.innerHTML = trades.slice(0, 20).map(t => `
+          <tr>
+            <td>${new Date(t.createdAt).toLocaleTimeString()}</td>
+            <td><span style="color:#c084fc;">⚡ ${(t.exchange || 'DEX').toUpperCase()}</span></td>
+            <td>${t.inputToken} → ${t.outputToken}</td>
+            <td>$${t.inputAmount.toFixed(2)}</td>
+            <td>$${(t.actualOutputAmount || t.expectedOutputAmount).toFixed(2)}</td>
+            <td>${t.slippageBps.toFixed(1)} bps</td>
+            <td class="${t.pnlUsd >= 0 ? 'val-green' : 'val-red'}">${t.pnlUsd >= 0 ? '+' : ''}$${t.pnlUsd.toFixed(4)}</td>
+            <td>
+              ${t.txSignature ? `<a href="https://solscan.io/tx/${t.txSignature}" target="_blank" class="tx-link">${t.txSignature.substring(0, 8)}... ↗</a>` : '<span style="color:var(--yellow)">Confirmed</span>'}
+            </td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    function clearSessionHistory() {
+      if (confirm('Clear stored swap volume and history for this browser?')) {
+        localStorage.removeItem('farmvolume_trades');
+        localStorage.removeItem('farmvolume_stats');
+        document.getElementById('tradesBody').innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">Stats reset. Ready for new trades.</td></tr>';
+        renderDashboard();
+        notify('Stats Reset', 'Volume statistics cleared successfully.', 'info');
+      }
+    }
+
+    // ============================================
+    // 5. Test Swap (100% Client-Side)
+    // ============================================
     async function executeTestSwap() {
       if (!userWallet) {
         notify('Wallet Required', 'Please connect your Phantom or Solflare wallet first.', 'warning');
@@ -643,14 +991,13 @@
       }
 
       const btn = document.getElementById('testSwapBtn');
-      btn.innerText = '⏳ Signing in Wallet...';
+      btn.innerText = '⏳ Preparing Swap...';
       btn.disabled = true;
 
       try {
         const amount = 1.0;
         const info = getSelectedTokens();
 
-        // Auto-detect which token the user actually holds
         const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
         const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
         let isForward = currentDirection === 'A_TO_B';
@@ -671,55 +1018,39 @@
 
         notify('Preparing Swap', `Fetching optimal quote on ${dex.toUpperCase()}...`, 'info', 3000);
 
-        // Step A: Prepare transaction from backend
-        const prepRes = await fetch('/api/prepare-swap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userPublicKey: userWallet,
-            inputMint,
-            outputMint,
-            amount,
-            slippageBps: 30,
-            exchange: dex,
-            titanApiKey: titanKey,
-            priorityFeeLamports: priorityFee,
-            onlyDirectRoutes: true,
-          }),
+        const prepData = await prepareSwapClientSide({
+          userPublicKey: userWallet,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps: 30,
+          exchange: dex,
+          titanApiKey: titanKey,
+          priorityFeeLamports: priorityFee,
+          onlyDirectRoutes: true,
         });
 
-        const prepData = await prepRes.json();
-        if (prepData.error) throw new Error(prepData.error);
+        notify('Awaiting Approval', 'Please confirm the swap in your wallet popup...', 'purple', 5000);
 
-        notify('Awaiting Approval', 'Please confirm the swap in your wallet extension...', 'purple', 5000);
-
-        // Step B: Sign and send transaction using Phantom
         const provider = window.phantom?.solana || window.solana;
         const txBytes = Uint8Array.from(atob(prepData.swapTransaction), (c) => c.charCodeAt(0));
         const transaction = solanaWeb3.VersionedTransaction.deserialize(txBytes);
 
         const { signature } = await provider.signAndSendTransaction(transaction);
-        console.log('Swap transaction submitted! Signature:', signature);
+        console.log('Swap transaction submitted! Tx:', signature);
 
-        // Step C: Record trade in dashboard
-        await fetch('/api/record-swap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signature,
-            inputToken,
-            outputToken,
-            inputAmount: amount,
-            outputAmount: prepData.expectedOutput,
-            exchange: dex,
-          }),
+        recordTradeClientSide({
+          signature,
+          inputToken,
+          outputToken,
+          inputAmount: amount,
+          outputAmount: prepData.expectedOutput,
+          exchange: prepData.exchange || dex,
         });
 
         currentDirection = currentDirection === 'A_TO_B' ? 'B_TO_A' : 'A_TO_B';
-
         notify('Swap Confirmed! 🎉', `Swapped $${amount} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'success', 6000, `https://solscan.io/tx/${signature}`);
         await refreshBalances();
-        await updateDashboard();
       } catch (err) {
         console.error('Test swap error:', err);
         notify('Swap Cancelled / Failed', err.message, 'error');
@@ -729,7 +1060,9 @@
       }
     }
 
-    // 4. DIRECT BROWSER AUTO-CYCLE LOOP (No Throwaway Wallets, 100% Volume on Your Wallet!)
+    // ============================================
+    // 6. Direct Browser Auto-Cycle Loop (100% Client-Side)
+    // ============================================
     let isLoopRunning = false;
 
     async function startDirectAutoLoop() {
@@ -739,18 +1072,17 @@
       }
 
       const cycles = parseInt(document.getElementById('cycleCount').value, 10) || 5;
-      const amount = parseFloat(document.getElementById('tradeAmount').value) || 5.0;
-      const speed = parseInt(document.getElementById('executionSpeed').value, 10) || 1000;
+      const amount = parseFloat(document.getElementById('tradeAmount').value) || 1.0;
+      const speed = parseInt(document.getElementById('executionSpeed').value, 10) || 0;
       const dex = document.getElementById('dexPlatform').value;
       const titanKey = document.getElementById('titanApiKey')?.value || '';
 
-      // Check user balances
       await refreshBalances();
       const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
       const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
 
       if (usdcVal < amount && usdtVal < amount) {
-        notify('Insufficient Balance', `You have $${usdcVal.toFixed(2)} USDC and $${usdtVal.toFixed(2)} USDT, but trade size is set to $${amount}. Please lower the swap amount or add funds.`, 'warning');
+        notify('Insufficient Balance', `You have $${usdcVal.toFixed(2)} USDC and $${usdtVal.toFixed(2)} USDT, but trade size is $${amount}. Please lower amount or add funds.`, 'warning');
         return;
       }
 
@@ -760,9 +1092,9 @@
           <div>• Wallet: <strong>${userWallet.substring(0, 6)}...${userWallet.substring(userWallet.length - 4)}</strong></div>
           <div>• Cycles: <strong>${cycles}</strong> (${cycles * 2} swaps back-and-forth)</div>
           <div>• Trade Size: <strong>$${amount}</strong></div>
-          <div>• Platform: <strong>${dex.toUpperCase()}</strong></div>
+          <div>• Mode: <strong>100% Client-Side Browser Execution</strong></div>
         </div>
-        <div style="margin-top:12px; font-size:0.8rem; color:#10b981;">✅ 100% of volume registers directly to your wallet on Titan Exchange! No funds ever leave your custody.</div>
+        <div style="margin-top:12px; font-size:0.8rem; color:#10b981;">✅ 100% Non-custodial! No server ever touches your funds or private keys.</div>
       `;
       const confirmed = await showModalConfirm('🚀 Launch Volume Cycles', confirmHtml);
       if (!confirmed) return;
@@ -782,7 +1114,6 @@
       for (let cycle = 1; cycle <= cycles; cycle++) {
         if (!isLoopRunning) break;
 
-        // Auto-detect which token the user has balance in for Step 1
         await refreshBalances();
         const curUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
         const curUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
@@ -796,7 +1127,7 @@
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 1: ${inputToken} → ${outputToken} on ${dex.toUpperCase()}...`);
         const ok1 = await executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey);
         if (!ok1) {
-          notify('Cycle Paused', 'Transaction was cancelled or failed in wallet. Stopping loop.', 'warning');
+          notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
           break;
         }
 
@@ -806,7 +1137,7 @@
         if (!isLoopRunning) break;
         if (speed > 0) await new Promise(r => setTimeout(r, Math.min(speed, 2000)));
 
-        // --- STEP 2: Swap output -> input (Instant Swap Back) ---
+        // --- STEP 2: Swap back output -> input ---
         await refreshBalances();
         const postUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
         const postUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
@@ -817,12 +1148,12 @@
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 2 (Swap Back): ${outputToken} → ${inputToken} on ${dex.toUpperCase()}...`);
         const ok2 = await executeDirectSwap(outputMint, inputMint, outputToken, inputToken, swapBackAmount, dex, titanKey);
         if (!ok2) {
-          notify('Cycle Paused', 'Transaction was cancelled or failed in wallet. Stopping loop.', 'warning');
+          notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
           break;
         }
 
         completedSwaps++;
-        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Completed! Total Volume: $${(completedSwaps * amount).toFixed(2)}`);
+        updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Completed! Volume: $${(completedSwaps * amount).toFixed(2)}`);
 
         if (!isLoopRunning) break;
         if (speed > 0 && cycle < cycles) await new Promise(r => setTimeout(r, speed));
@@ -835,7 +1166,7 @@
       document.getElementById('statusBadge').className = 'badge badge-stopped';
 
       if (completedSwaps === totalSwaps) {
-        notify('All Cycles Completed! 🎉', `Executed all ${totalSwaps} swaps directly on ${dex.toUpperCase()}! Volume is counted on your wallet.`, 'success', 8000);
+        notify('All Cycles Completed! 🎉', `Executed all ${totalSwaps} swaps successfully! Volume registered to your wallet.`, 'success', 8000);
       }
     }
 
@@ -857,26 +1188,19 @@
 
     async function executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey) {
       try {
-        notify('Preparing Swap', `Fetching optimal quote for $${amount.toFixed(2)} ${inputToken} → ${outputToken} on ${dex.toUpperCase()}...`, 'info', 3000);
+        notify('Preparing Swap', `Fetching optimal quote for $${amount.toFixed(2)} ${inputToken} → ${outputToken}...`, 'info', 3000);
 
-        const prepRes = await fetch('/api/prepare-swap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userPublicKey: userWallet,
-            inputMint,
-            outputMint,
-            amount,
-            slippageBps: 30,
-            exchange: dex,
-            titanApiKey: titanKey,
-            priorityFeeLamports: 5000,
-            onlyDirectRoutes: true,
-          }),
+        const prepData = await prepareSwapClientSide({
+          userPublicKey: userWallet,
+          inputMint,
+          outputMint,
+          amount,
+          slippageBps: 30,
+          exchange: dex,
+          titanApiKey: titanKey,
+          priorityFeeLamports: 5000,
+          onlyDirectRoutes: true,
         });
-
-        const prepData = await prepRes.json();
-        if (prepData.error) throw new Error(prepData.error);
 
         notify('Confirm in Phantom', `Please approve swap: $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'purple', 6000);
 
@@ -887,23 +1211,17 @@
         const { signature } = await provider.signAndSendTransaction(transaction);
         console.log('Swap confirmed on-chain! Tx:', signature);
 
-        // Record in dashboard analytics
-        await fetch('/api/record-swap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signature,
-            inputToken,
-            outputToken,
-            inputAmount: amount,
-            outputAmount: prepData.expectedOutput,
-            exchange: dex,
-          }),
+        recordTradeClientSide({
+          signature,
+          inputToken,
+          outputToken,
+          inputAmount: amount,
+          outputAmount: prepData.expectedOutput,
+          exchange: prepData.exchange || dex,
         });
 
-        notify('Swap Confirmed! ✅', `Swapped $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken} on Titan!`, 'success', 5000, `https://solscan.io/tx/${signature}`);
+        notify('Swap Confirmed! ✅', `Swapped $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}!`, 'success', 5000, `https://solscan.io/tx/${signature}`);
         await refreshBalances();
-        await updateDashboard();
         return true;
       } catch (err) {
         console.error('Swap error:', err);
@@ -912,59 +1230,11 @@
       }
     }
 
-    // 5. Update Live Dashboard Stats & Progress
-    async function updateDashboard() {
-      try {
-        const res = await fetch('/api/status');
-        const data = await res.json();
-        if (!data || !data.session) return;
-
-        const s = data.session;
-        document.getElementById('totalVolume').innerText = '$' + s.totalVolumeUsd.toFixed(2);
-        document.getElementById('netPnl').innerText = (s.totalPnlUsd >= 0 ? '+$' : '-$') + Math.abs(s.totalPnlUsd).toFixed(4);
-        document.getElementById('netPnl').className = 'stat-val ' + (s.totalPnlUsd >= 0 ? 'val-green' : 'val-red');
-        document.getElementById('feesPaid').innerText = 'Fees Paid: $' + s.totalFeesUsd.toFixed(4);
-        document.getElementById('swapCount').innerText = `${s.totalSwaps} (${s.totalCycles} cycles)`;
-        document.getElementById('swapBreakdown').innerText = `${s.successfulSwaps} ok | ${s.distractionSwaps} distraction`;
-
-        // Update AutoCycle Progress
-        if (data.autoCycle && data.autoCycle.status === 'running') {
-          const ac = data.autoCycle;
-          document.getElementById('progressBanner').style.display = 'block';
-          document.getElementById('progressText').innerText = `⚡ Executing Cycle ${ac.completedCycles + 1} / ${ac.totalCycles} (Swaps: ${ac.completedSwaps} / ${ac.totalSwaps})...`;
-          const pct = Math.floor((ac.completedSwaps / ac.totalSwaps) * 100);
-          document.getElementById('progressPercent').innerText = `${pct}%`;
-          document.getElementById('progressBarFill').style.width = `${pct}%`;
-        } else if (data.autoCycle && data.autoCycle.status === 'completed') {
-          document.getElementById('progressText').innerText = `🎉 All ${data.autoCycle.totalCycles} Cycles Completed Hands-Free!`;
-          document.getElementById('progressBarFill').style.width = '100%';
-          document.getElementById('progressPercent').innerText = '100%';
-        }
-
-        if (data.recentTrades && data.recentTrades.length > 0) {
-          const tbody = document.getElementById('tradesBody');
-          tbody.innerHTML = data.recentTrades.slice(0, 15).map(t => `
-            <tr>
-              <td>${new Date(t.createdAt).toLocaleTimeString()}</td>
-              <td>${t.isDistraction ? '<span style="color:var(--purple);">🎭 Distraction</span>' : 'Primary'}</td>
-              <td>${t.inputToken} → ${t.outputToken}</td>
-              <td>$${t.inputAmount.toFixed(2)}</td>
-              <td>$${(t.actualOutputAmount || t.expectedOutputAmount).toFixed(2)}</td>
-              <td>${(t.actualSlippageBps || t.slippageBps).toFixed(1)} bps</td>
-              <td class="${t.pnlUsd >= 0 ? 'val-green' : 'val-red'}">${t.pnlUsd >= 0 ? '+' : ''}$${t.pnlUsd.toFixed(4)}</td>
-              <td>
-                ${t.txSignature ? `<a href="https://solscan.io/tx/${t.txSignature}" target="_blank" class="tx-link">${t.txSignature.substring(0, 8)}... ↗</a>` : '<span style="color:var(--yellow)">Confirmed</span>'}
-              </td>
-            </tr>
-          `).join('');
-        }
-      } catch (err) {
-        console.error('Failed to poll dashboard data', err);
-      }
+    // Initialize Dashboard on load
+    renderDashboard();
+    if (localStorage.getItem('farmvolume_custom_rpc')) {
+      document.getElementById('customRpcInput').value = localStorage.getItem('farmvolume_custom_rpc');
     }
-
-    setInterval(updateDashboard, 2500);
-    updateDashboard();
   </script>
 </body>
 </html>
