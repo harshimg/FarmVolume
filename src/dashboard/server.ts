@@ -196,6 +196,30 @@ export class DashboardServer {
       }
     });
 
+    // API: Titan Quote Proxy (bypasses browser CORS preflight restrictions)
+    this.app.get('/api/titan-quote', async (req, res) => {
+      try {
+        const { inputMint, outputMint, amount, userPublicKey, slippageBps = '50', apiKey } = req.query;
+        if (!inputMint || !outputMint || !amount || !userPublicKey) {
+          return res.status(400).json({ error: 'Missing required parameters (inputMint, outputMint, amount, userPublicKey)' });
+        }
+        const config = loadConfig();
+        const key = (apiKey as string) || (req.headers['x-api-key'] as string) || config.titanAuthToken || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
+        const fetch = (await import('node-fetch')).default;
+        const titanUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+        const titanRes = await fetch(titanUrl, {
+          headers: {
+            'x-api-key': key,
+            Accept: 'application/json',
+          },
+        });
+        const data = await titanRes.text();
+        res.status(titanRes.status).send(data);
+      } catch (err) {
+        res.status(500).json({ error: (err as Error).message });
+      }
+    });
+
     // API: Prepare Swap Transaction for Browser Wallet Signing
     // OPTIMIZED for minimum SOL cost and direct single-hop routing!
     this.app.post('/api/prepare-swap', async (req, res) => {

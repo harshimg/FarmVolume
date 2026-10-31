@@ -797,30 +797,48 @@
       // --- Option A: Titan Exchange ---
       if (exchange === 'titan') {
         const apiKey = titanApiKey || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
-        const titanUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+        const queryParams = `inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}&apiKey=${encodeURIComponent(apiKey)}`;
 
-        let titanRes;
+        let titanData = null;
+        let lastError = null;
+
+        // 1. Try local dev-server proxy first (bypasses browser CORS preflight 404)
         try {
-          titanRes = await fetch(titanUrl, {
-            headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
-          });
-        } catch (corsErr) {
-          console.warn('Titan browser CORS restriction encountered. Auto-routing through Jupiter...', corsErr);
-          notify('Routing Notice', 'Titan has browser CORS restriction. Auto-routing via Jupiter Aggregator!', 'purple', 4000);
-          return prepareSwapClientSide({
-            userPublicKey,
-            inputMint,
-            outputMint,
-            amount,
-            slippageBps,
-            exchange: 'jupiter',
-            priorityFeeLamports,
-            onlyDirectRoutes
-          });
+          const proxyRes = await fetch(`/api/titan-quote?${queryParams}`);
+          if (proxyRes.ok) {
+            titanData = await proxyRes.json();
+          } else {
+            const errTxt = await proxyRes.text();
+            console.warn('Titan proxy status:', proxyRes.status, errTxt);
+            try {
+              const errJson = JSON.parse(errTxt);
+              lastError = errJson.error || errTxt;
+            } catch (_) {
+              lastError = errTxt;
+            }
+          }
+        } catch (proxyErr) {
+          console.warn('Local Titan proxy not reachable:', proxyErr.message);
         }
 
-        if (titanRes && titanRes.ok) {
-          const titanData = await titanRes.json();
+        // 2. Direct fallback (if proxy not available or on direct domain)
+        if (!titanData) {
+          try {
+            const titanDirectUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+            const titanRes = await fetch(titanDirectUrl, {
+              headers: { 'x-api-key': apiKey, 'Accept': 'application/json' }
+            });
+            if (titanRes.ok) {
+              titanData = await titanRes.json();
+            } else {
+              lastError = await titanRes.text();
+            }
+          } catch (directErr) {
+            lastError = directErr.message;
+          }
+        }
+
+        if (titanData) {
           const dart = titanData.quotes?.['Titan-DART'] || (titanData.quotes && Object.values(titanData.quotes)[0]);
 
           if (dart && dart.instructions) {
@@ -836,9 +854,12 @@
               }
             }));
 
+            const units = dart.computeUnitsSafe || 400000;
+            const microLamports = priorityFeeLamports ? Math.max(1000, Math.floor((priorityFeeLamports * 1000000) / units)) : 1000;
+
             const instructions = [
-              solanaWeb3.ComputeBudgetProgram.setComputeUnitLimit({ units: 400000 }),
-              solanaWeb3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1000 }),
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitLimit({ units }),
+              solanaWeb3.ComputeBudgetProgram.setComputeUnitPrice({ microLamports }),
             ];
 
             for (const ix of dart.instructions) {
@@ -862,7 +883,12 @@
             }).compileToV0Message(lookupTableAccounts);
 
             const tx = new solanaWeb3.VersionedTransaction(messageV0);
-            const txBase64 = btoa(String.fromCharCode.apply(null, tx.serialize()));
+            const serialized = tx.serialize();
+            let binary = '';
+            for (let i = 0; i < serialized.length; i++) {
+              binary += String.fromCharCode(serialized[i]);
+            }
+            const txBase64 = btoa(binary);
             const outAmount = parseFloat(dart.outAmount || '0') / Math.pow(10, outputDecimals);
 
             return {
@@ -875,18 +901,8 @@
           }
         }
 
-        // If Titan fails or pair unavailable, transparently use Jupiter
-        console.warn('Titan unavailable for this pair, falling back to Jupiter');
-        return prepareSwapClientSide({
-          userPublicKey,
-          inputMint,
-          outputMint,
-          amount,
-          slippageBps,
-          exchange: 'jupiter',
-          priorityFeeLamports,
-          onlyDirectRoutes
-        });
+        // If Titan fails, alert the user explicitly so they know why rather than silently falling back to Jupiter
+        throw new Error(`Titan Quote Failed: ${lastError || 'Could not assemble Titan DART route. Ensure dev-server is running (npm run dev).'}`);
       }
 
       // --- Option B: Jupiter Aggregator (Native Client-Side CORS Enabled) ---

@@ -88,6 +88,43 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // API 2: /api/titan-quote (Server proxy for Titan Exchange to bypass browser CORS)
+  if (pathname === '/api/titan-quote') {
+    const inputMint = parsedUrl.query.inputMint;
+    const outputMint = parsedUrl.query.outputMint;
+    const amount = parsedUrl.query.amount;
+    const userPublicKey = parsedUrl.query.userPublicKey;
+    const slippageBps = parsedUrl.query.slippageBps || '50';
+    const apiKey = parsedUrl.query.apiKey || req.headers['x-api-key'] || process.env.TITAN_AUTH_TOKEN || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
+
+    if (!inputMint || !outputMint || !amount || !userPublicKey) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing required parameters for Titan quote' }));
+      return;
+    }
+
+    try {
+      const fetch = (await import('node-fetch')).default;
+      const titanUrl = `https://portal.api.titan.exchange/api/v1/quote/swap?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amount}&userPublicKey=${userPublicKey}&includeAltContents=true&slippageBps=${slippageBps}`;
+      
+      const titanRes = await fetch(titanUrl, {
+        headers: {
+          'x-api-key': apiKey,
+          'Accept': 'application/json',
+        },
+      });
+
+      const responseText = await titanRes.text();
+      res.writeHead(titanRes.status, { 'Content-Type': 'application/json' });
+      res.end(responseText);
+      return;
+    } catch (err) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `Titan proxy error: ${err.message}` }));
+      return;
+    }
+  }
+
   // API 2: /api/rpc (Proxy for Solana RPC JSON-RPC calls)
   if (pathname === '/api/rpc') {
     let bodyData = '';
