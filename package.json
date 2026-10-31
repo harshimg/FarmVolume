@@ -4,9 +4,10 @@
   "description": "DEX Volume Generation Engine with Human-Like Behavior Simulation",
   "main": "dist/index.js",
   "scripts": {
+    "dev": "node dev-server.js",
+    "serve": "node dev-server.js",
     "build": "tsc && node -e \"const fs=require('fs'); if(!fs.existsSync('dist')) fs.mkdirSync('dist'); fs.copyFileSync('index.html', 'dist/index.html');\"",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts",
+    "start": "node dev-server.js",
     "dashboard": "ts-node src/dashboard/server.ts",
     "test:swap": "ts-node src/test-swap.ts"
   },
