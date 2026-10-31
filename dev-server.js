@@ -62,35 +62,21 @@ const server = http.createServer(async (req, res) => {
       let usdc = 0;
       try {
         const usdcMint = new PublicKey(TOKENS.USDC);
-        const usdcAta = await getAssociatedTokenAddress(usdcMint, pubkey);
-        const acc = await getAccount(connection, usdcAta);
-        usdc = Number(acc.amount) / 1e6;
-      } catch (_) {
-        try {
-          const usdcMint = new PublicKey(TOKENS.USDC);
-          const parsed = await connection.getParsedTokenAccountsByOwner(pubkey, { mint: usdcMint });
-          for (const item of parsed.value) {
-            usdc += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
-          }
-        } catch (_) {}
-      }
+        const parsed = await connection.getParsedTokenAccountsByOwner(pubkey, { mint: usdcMint });
+        for (const item of parsed.value) {
+          usdc += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
+        }
+      } catch (_) {}
 
       // 3. USDT balance
       let usdt = 0;
       try {
         const usdtMint = new PublicKey(TOKENS.USDT);
-        const usdtAta = await getAssociatedTokenAddress(usdtMint, pubkey);
-        const acc = await getAccount(connection, usdtAta);
-        usdt = Number(acc.amount) / 1e6;
-      } catch (_) {
-        try {
-          const usdtMint = new PublicKey(TOKENS.USDT);
-          const parsed = await connection.getParsedTokenAccountsByOwner(pubkey, { mint: usdtMint });
-          for (const item of parsed.value) {
-            usdt += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
-          }
-        } catch (_) {}
-      }
+        const parsed = await connection.getParsedTokenAccountsByOwner(pubkey, { mint: usdtMint });
+        for (const item of parsed.value) {
+          usdt += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
+        }
+      } catch (_) {}
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ sol, usdc, usdt }));
@@ -100,6 +86,29 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify({ error: err.message }));
       return;
     }
+  }
+
+  // API 2: /api/rpc (Proxy for Solana RPC JSON-RPC calls)
+  if (pathname === '/api/rpc') {
+    let bodyData = '';
+    req.on('data', chunk => bodyData += chunk);
+    req.on('end', async () => {
+      try {
+        const fetch = (await import('node-fetch')).default;
+        const rpcRes = await fetch(RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyData,
+        });
+        const rpcText = await rpcRes.text();
+        res.writeHead(rpcRes.status, { 'Content-Type': 'application/json' });
+        res.end(rpcText);
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: e.message }));
+      }
+    });
+    return;
   }
 
   // Static File Serving

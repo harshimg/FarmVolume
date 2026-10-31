@@ -641,7 +641,7 @@
     function getRpcUrl() {
       const saved = localStorage.getItem('farmvolume_custom_rpc');
       if (saved && saved.trim().length > 0) return saved.trim();
-      return DEFAULT_RPCS[activeRpcIndex];
+      return window.location.origin + '/api/rpc';
     }
 
     function getSolanaConnection() {
