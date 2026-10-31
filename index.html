@@ -802,11 +802,14 @@
         let titanData = null;
         let lastError = null;
 
-        // 1. Try local dev-server proxy first (bypasses browser CORS preflight 404)
+        // 1. Try proxy first (Cloudflare Pages function or dev-server proxy)
         try {
           const proxyRes = await fetch(`/api/titan-quote?${queryParams}`);
-          if (proxyRes.ok) {
+          const cType = proxyRes.headers.get('content-type') || '';
+          if (proxyRes.ok && cType.includes('application/json')) {
             titanData = await proxyRes.json();
+          } else if (proxyRes.ok) {
+            console.warn('Titan proxy returned non-JSON response, likely pending deployment.');
           } else {
             const errTxt = await proxyRes.text();
             console.warn('Titan proxy status:', proxyRes.status, errTxt);
@@ -818,7 +821,7 @@
             }
           }
         } catch (proxyErr) {
-          console.warn('Local Titan proxy not reachable:', proxyErr.message);
+          console.warn('Titan proxy error:', proxyErr.message);
         }
 
         // 2. Direct fallback (if proxy not available or on direct domain)
