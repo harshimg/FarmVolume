@@ -321,6 +321,94 @@
     .modal-body { font-size: 0.875rem; color: var(--text-muted); line-height: 1.6; margin-bottom: 22px; white-space: pre-line; }
     .modal-actions { display: flex; justify-content: flex-end; gap: 12px; }
 
+    /* Multi-Wallet Modal & Connect UI */
+    .wallet-list-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 18px;
+      max-height: 290px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .wallet-list-container::-webkit-scrollbar {
+      width: 4px;
+    }
+    .wallet-list-container::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+    .wallet-option-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 14px;
+      background: #0d121c;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: left;
+      width: 100%;
+    }
+    .wallet-option-item:hover {
+      background: #151d2c;
+      border-color: var(--primary);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    }
+    .wallet-option-item.highlight-inapp {
+      background: rgba(59, 130, 246, 0.12);
+      border-color: rgba(59, 130, 246, 0.5);
+    }
+    .wallet-icon-box {
+      width: 38px;
+      height: 38px;
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.04);
+      flex-shrink: 0;
+    }
+    .wallet-icon-box svg {
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+    }
+    .wallet-status-badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      letter-spacing: 0.3px;
+    }
+    .badge-detected {
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    .badge-inapp {
+      background: rgba(139, 92, 246, 0.22);
+      color: #c084fc;
+      border: 1px solid rgba(139, 92, 246, 0.45);
+      animation: pulseInApp 2s infinite;
+    }
+    @keyframes pulseInApp {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.65; }
+    }
+    .badge-popular {
+      background: rgba(245, 158, 11, 0.18);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+    }
+    .badge-mobile {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     @keyframes scaleUp { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   </style>
@@ -341,6 +429,96 @@
     </div>
   </div>
 
+  <!-- Multi-Wallet Selection Modal -->
+  <div id="walletModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 480px; padding: 22px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div class="modal-title" style="margin-bottom: 0;">
+          <span>⚡ Connect Solana Wallet</span>
+        </div>
+        <button onclick="closeWalletModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px;">✕</button>
+      </div>
+
+      <!-- In-App Mobile Browser Notice (dynamic) -->
+      <div id="inAppNotice" style="display: none; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.4); border-radius: 10px; padding: 12px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.85rem; color: #60a5fa;">
+          <span>📱</span> <span id="inAppNoticeTitle">In-App Browser Detected</span>
+        </div>
+        <div id="inAppNoticeText" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 4px;">
+          You're browsing inside your wallet app. Tap below for instant 1-click connection.
+        </div>
+      </div>
+
+      <!-- Detected & Supported Wallets List -->
+      <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px; margin-bottom: 10px;">Select a Wallet</div>
+      <div id="walletsList" class="wallet-list-container">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <!-- Mobile Wallet App Section -->
+      <div style="border-top: 1px solid var(--border); padding-top: 16px; margin-top: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 700; letter-spacing: 0.5px;">Mobile App Shortcuts</div>
+          <span style="font-size: 0.7rem; color: #38bdf8; background: rgba(56, 189, 248, 0.12); padding: 2px 8px; border-radius: 999px;">iOS & Android</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button type="button" onclick="openInMobileApp('jupiter')" style="justify-content: center; font-size: 0.8rem; padding: 9px; background: #151c2a;">
+            <span>🪐 Jupiter App</span>
+          </button>
+          <button type="button" onclick="openInMobileApp('phantom')" style="justify-content: center; font-size: 0.8rem; padding: 9px; background: #151c2a;">
+            <span>👻 Phantom App</span>
+          </button>
+          <button type="button" onclick="openInMobileApp('solflare')" style="justify-content: center; font-size: 0.8rem; padding: 9px; background: #151c2a;">
+            <span>🔆 Solflare App</span>
+          </button>
+          <button type="button" onclick="copyCurrentUrlForMobile()" style="justify-content: center; font-size: 0.8rem; padding: 9px; background: #151c2a;">
+            <span id="copyUrlBtnText">📋 Copy Link</span>
+          </button>
+        </div>
+        <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 8px; text-align: center;">
+          Tip: In Phantom or Jupiter Mobile App, tap the in-app Browser (🌐) and paste your dApp link.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Connected Wallet Account Modal -->
+  <div id="accountModal" class="modal-overlay">
+    <div class="modal-card" style="max-width: 440px; padding: 22px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div class="modal-title" style="margin-bottom: 0;">
+          <span>Connected Account</span>
+        </div>
+        <button onclick="closeAccountModal()" style="background: none; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 6px;">✕</button>
+      </div>
+
+      <div style="background: #0b0e14; border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600;">Active Wallet</span>
+          <span id="accountWalletNameTag" style="font-size: 0.75rem; font-weight: 600; color: #34d399; background: rgba(16, 185, 129, 0.15); padding: 2px 8px; border-radius: 9999px;">Jupiter</span>
+        </div>
+        <div id="accountFullAddress" style="font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; word-break: break-all; color: var(--text); background: rgba(255,255,255,0.03); padding: 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 10px;"></div>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="copyWalletAddress()" style="flex: 1; font-size: 0.8rem; padding: 7px; justify-content: center;">
+            <span id="copyAddrBtnText">📋 Copy Address</span>
+          </button>
+          <a id="accountSolscanBtn" href="#" target="_blank" style="flex: 1; font-size: 0.8rem; padding: 7px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-weight: 600; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; gap: 6px;">
+            <span>Solscan ↗</span>
+          </a>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px;">
+        <button class="btn-primary" onclick="closeAccountModal(); openWalletModal();" style="flex: 1; justify-content: center; font-size: 0.85rem;">
+          <span>🔄 Switch Wallet</span>
+        </button>
+        <button class="btn-danger" onclick="disconnectWallet(); closeAccountModal();" style="flex: 1; justify-content: center; font-size: 0.85rem;">
+          <span>Disconnect</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div class="container">
     <header>
       <div class="brand">
@@ -351,8 +529,8 @@
       </div>
       <div class="header-actions">
         <button id="rpcBtn" onclick="toggleRpcBar()" style="font-size:0.8rem; padding:7px 12px;">⚙️ RPC Config</button>
-        <button id="connectWalletBtn" class="btn-primary" onclick="connectWallet()">
-          <span>🦊 Connect Phantom / Solflare</span>
+        <button id="connectWalletBtn" class="btn-primary" onclick="handleWalletBtnClick()">
+          <span id="connectWalletBtnText">⚡ Connect Wallet</span>
         </button>
       </div>
     </header>
@@ -371,10 +549,14 @@
     <!-- Connected Wallet Banner -->
     <div class="wallet-banner">
       <div>
-        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px;">Connected Solana Wallet</div>
+        <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; display:flex; align-items:center; gap:8px;">
+          <span>Connected Solana Wallet</span>
+          <span id="connectedWalletBadge" style="display:none; font-size:0.72rem; padding:2px 8px; border-radius:12px; background:rgba(59,130,246,0.2); color:#60a5fa; border:1px solid rgba(59,130,246,0.3); font-weight:600;"></span>
+        </div>
         <div class="wallet-info">
           <div id="walletAddress" class="wallet-chip">Not Connected (Click Connect Above)</div>
           <a id="solscanLink" href="#" target="_blank" class="tx-link" style="display: none;">View on Solscan ↗</a>
+          <button id="disconnectBtn" onclick="disconnectWallet()" style="display:none; padding:4px 10px; font-size:0.75rem; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; border-radius:6px; cursor:pointer;">Disconnect</button>
         </div>
         <div class="balances-row" id="balancesRow" style="display: none;">
           <div class="balance-tag">SOL: <strong id="balSol">0.0000</strong></div>
@@ -516,6 +698,10 @@
 
   <script>
     let userWallet = null;
+    let activeWalletProvider = null;
+    let activeWalletName = 'Wallet';
+    let activeWalletId = null;
+    const registeredStandardWallets = new Map();
     let currentDirection = 'A_TO_B';
     let currentMode = 'auto'; // 'auto' or 'manual'
     let activeSessionKeypair = null; // Generated ephemeral keypair for zero-popup session
@@ -602,35 +788,611 @@
       return { tokenA: TOKENS.USDC, tokenB: TOKENS.USDT, symA: 'USDC', symB: 'USDT' };
     }
 
-    // 1. Connect Phantom / Solflare
-    async function connectWallet() {
+    // ============================================
+    // 1. Comprehensive Multi-Wallet Engine (Extensions, Jupiter & Phantom Mobile Apps, Wallet Standard)
+    // ============================================
+    const B58_CHARS = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    function encodeBase58(source) {
+      if (!source) return '';
+      if (typeof source === 'string') return source;
+      const bytes = source instanceof Uint8Array ? source : new Uint8Array(source);
+      const digits = [0];
+      for (let i = 0; i < bytes.length; i++) {
+        for (let j = 0; j < digits.length; j++) digits[j] <<= 8;
+        digits[0] += bytes[i];
+        let carry = 0;
+        for (let j = 0; j < digits.length; j++) {
+          digits[j] += carry;
+          carry = (digits[j] / 58) | 0;
+          digits[j] %= 58;
+        }
+        while (carry) {
+          digits.push(carry % 58);
+          carry = (carry / 58) | 0;
+        }
+      }
+      for (let i = 0; i < bytes.length && bytes[i] === 0; i++) digits.push(0);
+      return digits.reverse().map(d => B58_CHARS[d]).join('');
+    }
+
+    const WALLET_DEFS = [
+      {
+        id: 'jupiter',
+        name: 'Jupiter',
+        desc: 'Extension & Jupiter Mobile App',
+        badge: 'Popular',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="16" fill="url(#jup-grad)"/><path d="M7 16a9 9 0 1 0 18 0A9 9 0 0 0 7 16z" fill="#000" fill-opacity=".15"/><circle cx="16" cy="16" r="6" fill="#FFF"/><circle cx="14" cy="14" r="2.5" fill="#F8A741"/><defs><linearGradient id="jup-grad" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop stop-color="#FFA843"/><stop offset="1" stop-color="#C572FA"/></linearGradient></defs></svg>`,
+        getProvider: () => {
+          if (window.jupiter?.solana) return window.jupiter.solana;
+          if (window.jupiter && typeof window.jupiter.connect === 'function') return window.jupiter;
+          if (window.jup?.solana) return window.jup.solana;
+          if (window.solana?.isJupiter) return window.solana;
+          return registeredStandardWallets.get('jupiter');
+        },
+        deepLink: (url) => `https://jup.ag/ul/browse?url=${encodeURIComponent(url)}`,
+        customScheme: (url) => `jupiter://browse?url=${encodeURIComponent(url)}`,
+        installUrl: 'https://jup.ag/mobile',
+      },
+      {
+        id: 'phantom',
+        name: 'Phantom',
+        desc: 'Extension & Phantom Mobile App',
+        badge: 'Popular',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 128 128" fill="none"><rect width="128" height="128" rx="28" fill="#AB9FF2"/><path d="M110.5 64c0 23.5-19 42.5-42.5 42.5-18.7 0-33.8-12-39.6-28.5L28 78c-2.8-5-4.5-10.7-4.5-16.8 0-19.1 15.5-34.7 34.7-34.7h10.3c23.2 0 42 16.8 42 37.5z" fill="#FFF"/><circle cx="77" cy="58" r="7" fill="#4B40C5"/><circle cx="97" cy="58" r="7" fill="#4B40C5"/></svg>`,
+        getProvider: () => {
+          if (window.phantom?.solana) return window.phantom.solana;
+          if (window.solana?.isPhantom) return window.solana;
+          return registeredStandardWallets.get('phantom');
+        },
+        deepLink: (url, origin) => `https://phantom.com/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(origin)}`,
+        customScheme: (url) => `phantom://browse/${encodeURIComponent(url)}`,
+        installUrl: 'https://phantom.app/',
+      },
+      {
+        id: 'solflare',
+        name: 'Solflare',
+        desc: 'Extension & Solflare Mobile App',
+        badge: '',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 128 128" fill="none"><rect width="128" height="128" rx="28" fill="#181528"/><path d="M64 22L102 88H26L64 22Z" fill="url(#solf-g)"/><circle cx="64" cy="74" r="14" fill="#FFF"/><defs><linearGradient id="solf-g" x1="64" y1="22" x2="64" y2="88" gradientUnits="userSpaceOnUse"><stop stop-color="#FC7227"/><stop offset="1" stop-color="#FC9927"/></linearGradient></defs></svg>`,
+        getProvider: () => {
+          if (window.solflare) return window.solflare;
+          if (window.solana?.isSolflare) return window.solana;
+          return registeredStandardWallets.get('solflare');
+        },
+        deepLink: (url, origin) => `https://solflare.com/ul/v1/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(origin)}`,
+        customScheme: (url) => `solflare://browse/${encodeURIComponent(url)}`,
+        installUrl: 'https://solflare.com/',
+      },
+      {
+        id: 'backpack',
+        name: 'Backpack',
+        desc: 'Extension & Backpack App',
+        badge: '',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 128 128" fill="none"><rect width="128" height="128" rx="28" fill="#E33E38"/><rect x="36" y="36" width="56" height="56" rx="10" fill="#FFF"/><circle cx="52" cy="64" r="6" fill="#E33E38"/><circle cx="76" cy="64" r="6" fill="#E33E38"/></svg>`,
+        getProvider: () => {
+          if (window.backpack?.solana) return window.backpack.solana;
+          if (window.backpack) return window.backpack;
+          if (window.solana?.isBackpack) return window.solana;
+          return registeredStandardWallets.get('backpack');
+        },
+        deepLink: (url) => `https://backpack.app/ul/browse/${encodeURIComponent(url)}`,
+        customScheme: (url) => `backpack://browse/${encodeURIComponent(url)}`,
+        installUrl: 'https://backpack.app/',
+      },
+      {
+        id: 'okx',
+        name: 'OKX Wallet',
+        desc: 'Web3 Multichain Wallet',
+        badge: '',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 128 128" fill="none"><rect width="128" height="128" rx="28" fill="#111"/><rect x="28" y="28" width="30" height="30" rx="6" fill="#FFF"/><rect x="70" y="70" width="30" height="30" rx="6" fill="#FFF"/><rect x="70" y="28" width="30" height="30" rx="6" fill="#FFF"/><rect x="28" y="70" width="30" height="30" rx="6" fill="#FFF"/></svg>`,
+        getProvider: () => {
+          if (window.okxwallet?.solana) return window.okxwallet.solana;
+          return registeredStandardWallets.get('okx wallet') || registeredStandardWallets.get('okx');
+        },
+        deepLink: (url) => `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(url)}`,
+        customScheme: (url) => `okx://wallet/dapp/url?dappUrl=${encodeURIComponent(url)}`,
+        installUrl: 'https://www.okx.com/web3',
+      },
+      {
+        id: 'coinbase',
+        name: 'Coinbase Wallet',
+        desc: 'Coinbase Solana Wallet',
+        badge: '',
+        iconSvg: `<svg width="26" height="26" viewBox="0 0 128 128" fill="none"><rect width="128" height="128" rx="28" fill="#0052FF"/><circle cx="64" cy="64" r="28" fill="#FFF"/><circle cx="64" cy="64" r="14" fill="#0052FF"/></svg>`,
+        getProvider: () => {
+          if (window.coinbaseSolana) return window.coinbaseSolana;
+          return registeredStandardWallets.get('coinbase wallet');
+        },
+        deepLink: (url) => `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}`,
+        customScheme: (url) => `cbwallet://dapp?url=${encodeURIComponent(url)}`,
+        installUrl: 'https://www.coinbase.com/wallet',
+      }
+    ];
+
+    function initWalletStandard() {
+      window.addEventListener('wallet-standard:register-wallet', (event) => {
+        if (event.detail && typeof event.detail === 'function') {
+          event.detail({
+            register: (wallet) => {
+              if (wallet && wallet.name) {
+                registeredStandardWallets.set(wallet.name.toLowerCase(), wallet);
+                if (document.getElementById('walletModal').style.display === 'flex') {
+                  renderWalletsList();
+                }
+              }
+            }
+          });
+        }
+      });
+
       try {
-        const provider = window.phantom?.solana || window.solana;
-        if (!provider) {
-          notify('No Wallet Detected', 'Please install the Phantom or Solflare browser extension.', 'error');
-          window.open('https://phantom.app/', '_blank');
-          return;
+        window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', {
+          detail: {
+            register: (wallet) => {
+              if (wallet && wallet.name) {
+                registeredStandardWallets.set(wallet.name.toLowerCase(), wallet);
+                if (document.getElementById('walletModal').style.display === 'flex') {
+                  renderWalletsList();
+                }
+              }
+            }
+          }
+        }));
+      } catch (e) {
+        console.warn('Wallet standard init notice:', e);
+      }
+    }
+
+    function isMobileDevice() {
+      return /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+             (window.innerWidth <= 768 && 'ontouchstart' in window);
+    }
+
+    function detectInAppBrowser() {
+      const ua = (navigator.userAgent || '').toLowerCase();
+      if (ua.includes('phantom') || window.phantom?.solana?.isPhantom) return 'phantom';
+      if (ua.includes('jupiter') || window.jupiter) return 'jupiter';
+      if (ua.includes('solflare') || window.solflare?.isSolflare) return 'solflare';
+      if (ua.includes('backpack') || window.backpack?.isBackpack) return 'backpack';
+      if (window.solana) {
+        if (window.solana.isPhantom) return 'phantom';
+        if (window.solana.isJupiter) return 'jupiter';
+        if (window.solana.isSolflare) return 'solflare';
+        if (window.solana.isBackpack) return 'backpack';
+        if (isMobileDevice()) return 'inapp';
+      }
+      return null;
+    }
+
+    function getActiveWalletProvider() {
+      if (activeWalletProvider) return activeWalletProvider;
+      if (window.jupiter?.solana) return window.jupiter.solana;
+      if (window.jupiter) return window.jupiter;
+      if (window.phantom?.solana) return window.phantom.solana;
+      if (window.solflare) return window.solflare;
+      if (window.backpack?.solana || window.backpack) return window.backpack?.solana || window.backpack;
+      if (window.okxwallet?.solana) return window.okxwallet.solana;
+      if (window.coinbaseSolana) return window.coinbaseSolana;
+      if (window.solana) return window.solana;
+      return null;
+    }
+
+    function handleWalletBtnClick() {
+      if (userWallet) {
+        openAccountModal();
+      } else {
+        openWalletModal();
+      }
+    }
+
+    function openWalletModal() {
+      renderWalletsList();
+      const inApp = detectInAppBrowser();
+      const inAppNotice = document.getElementById('inAppNotice');
+      if (inApp && inAppNotice) {
+        inAppNotice.style.display = 'block';
+        const name = inApp === 'phantom' ? 'Phantom' : inApp === 'jupiter' ? 'Jupiter' : inApp === 'solflare' ? 'Solflare' : inApp === 'backpack' ? 'Backpack' : 'Mobile Wallet';
+        document.getElementById('inAppNoticeTitle').innerText = `${name} In-App Browser Detected`;
+      } else if (inAppNotice) {
+        inAppNotice.style.display = 'none';
+      }
+      document.getElementById('walletModal').style.display = 'flex';
+    }
+
+    function closeWalletModal() {
+      document.getElementById('walletModal').style.display = 'none';
+    }
+
+    function openAccountModal() {
+      if (!userWallet) return;
+      document.getElementById('accountWalletNameTag').innerText = activeWalletName;
+      document.getElementById('accountFullAddress').innerText = userWallet;
+      document.getElementById('accountSolscanBtn').href = `https://solscan.io/account/${userWallet}`;
+      document.getElementById('accountModal').style.display = 'flex';
+    }
+
+    function closeAccountModal() {
+      document.getElementById('accountModal').style.display = 'none';
+    }
+
+    function copyWalletAddress() {
+      if (!userWallet) return;
+      navigator.clipboard.writeText(userWallet).then(() => {
+        const txt = document.getElementById('copyAddrBtnText');
+        if (txt) {
+          txt.innerText = '✓ Copied!';
+          setTimeout(() => { txt.innerText = '📋 Copy Address'; }, 2000);
+        }
+        notify('Address Copied', `${userWallet.substring(0, 6)}... copied to clipboard`, 'success', 2500);
+      });
+    }
+
+    function renderWalletsList() {
+      const container = document.getElementById('walletsList');
+      if (!container) return;
+
+      const inApp = detectInAppBrowser();
+      const isMobile = isMobileDevice();
+      let html = '';
+
+      WALLET_DEFS.forEach((wallet) => {
+        let provider = null;
+        try { provider = wallet.getProvider(); } catch (_) {}
+        const isDetected = !!provider;
+        const isInAppTarget = inApp === wallet.id;
+
+        let badgeHtml = '';
+        if (isInAppTarget) {
+          badgeHtml = '<span class="wallet-status-badge badge-inapp">⚡ In-App Ready</span>';
+        } else if (isDetected) {
+          badgeHtml = '<span class="wallet-status-badge badge-detected">Detected</span>';
+        } else if (isMobile) {
+          badgeHtml = '<span class="wallet-status-badge badge-mobile">App Link</span>';
+        } else if (wallet.badge) {
+          badgeHtml = `<span class="wallet-status-badge badge-popular">${wallet.badge}</span>`;
         }
 
-        const resp = await provider.connect();
-        userWallet = resp.publicKey.toString();
+        html += `
+          <div class="wallet-option-item ${isInAppTarget ? 'highlight-inapp' : ''}" onclick="selectWallet('${wallet.id}')">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div class="wallet-icon-box">${wallet.iconSvg}</div>
+              <div>
+                <div style="font-weight: 600; font-size: 0.95rem; color: var(--text);">${wallet.name}</div>
+                <div style="font-size: 0.75rem; color: var(--text-muted);">${isInAppTarget ? 'Active In-App Browser Session' : wallet.desc}</div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              ${badgeHtml}
+              <span style="color: var(--text-muted); font-size: 0.9rem;">→</span>
+            </div>
+          </div>
+        `;
+      });
 
-        document.getElementById('walletAddress').innerText = userWallet.substring(0, 6) + '...' + userWallet.substring(userWallet.length - 6);
-        document.getElementById('connectWalletBtn').innerText = '✓ ' + userWallet.substring(0, 4) + '...' + userWallet.substring(userWallet.length - 4);
-        document.getElementById('connectWalletBtn').className = 'btn-success';
+      // Render custom detected Wallet Standard wallets
+      registeredStandardWallets.forEach((w, key) => {
+        const matchesKnown = WALLET_DEFS.some(def => def.id === key || def.name.toLowerCase() === key);
+        if (!matchesKnown && w && w.name) {
+          html += `
+            <div class="wallet-option-item" onclick="selectStandardWallet('${key}')">
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="wallet-icon-box">
+                  ${w.icon ? `<img src="${w.icon}" style="width:26px; height:26px; border-radius:6px;" alt="${w.name}"/>` : `<svg width="26" height="26" viewBox="0 0 32 32" fill="none"><circle cx="16" cy="16" r="16" fill="#3b82f6"/><text x="16" y="21" font-size="14" text-anchor="middle" fill="#fff" font-weight="bold">W</text></svg>`}
+                </div>
+                <div>
+                  <div style="font-weight: 600; font-size: 0.95rem; color: var(--text);">${w.name}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">Solana Wallet Standard</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="wallet-status-badge badge-detected">Detected</span>
+                <span style="color: var(--text-muted); font-size: 0.9rem;">→</span>
+              </div>
+            </div>
+          `;
+        }
+      });
 
-        const solscan = document.getElementById('solscanLink');
-        solscan.href = `https://solscan.io/account/${userWallet}`;
-        solscan.style.display = 'inline';
+      container.innerHTML = html;
+    }
 
-        document.getElementById('balancesRow').style.display = 'flex';
-        document.getElementById('testSwapBtn').disabled = false;
+    async function selectWallet(walletId) {
+      const walletDef = WALLET_DEFS.find(w => w.id === walletId);
+      if (!walletDef) return;
 
-        notify('Wallet Connected', `Connected to ${userWallet.substring(0, 6)}...`, 'success');
+      let provider = null;
+      try { provider = walletDef.getProvider(); } catch (_) {}
+
+      const isMobile = isMobileDevice();
+
+      // If mobile outside of in-app browser and provider not injected:
+      if (!provider && isMobile) {
+        openInMobileApp(walletId);
+        return;
+      }
+
+      // If desktop and provider not injected:
+      if (!provider) {
+        notify(`${walletDef.name} Not Found`, `Please install the ${walletDef.name} extension or open in mobile app.`, 'warning', 5000);
+        if (walletDef.installUrl) {
+          window.open(walletDef.installUrl, '_blank');
+        }
+        return;
+      }
+
+      await connectToProvider(provider, walletDef.name, walletDef.id);
+    }
+
+    async function selectStandardWallet(walletKey) {
+      const wallet = registeredStandardWallets.get(walletKey);
+      if (!wallet) return;
+      await connectToProvider(wallet, wallet.name || 'Solana Wallet', walletKey);
+    }
+
+    async function connectToProvider(provider, walletName, walletId) {
+      try {
+        notify('Connecting...', `Requesting connection to ${walletName}...`, 'purple', 3000);
+        let publicKeyStr = null;
+
+        // Wallet Standard connect feature
+        if (provider.features && provider.features['standard:connect']) {
+          const res = await provider.features['standard:connect'].connect();
+          if (res && res.accounts && res.accounts.length > 0) {
+            publicKeyStr = res.accounts[0].address;
+          }
+        }
+        // Injected provider (Jupiter, Phantom, Solflare, etc.)
+        else if (typeof provider.connect === 'function') {
+          const resp = await provider.connect();
+          publicKeyStr = (resp && resp.publicKey) ? resp.publicKey.toString() : (provider.publicKey ? provider.publicKey.toString() : null);
+        } else if (provider.publicKey) {
+          publicKeyStr = provider.publicKey.toString();
+        }
+
+        if (!publicKeyStr) {
+          throw new Error(`Could not retrieve public key from ${walletName}. Please unlock your wallet and approve connection.`);
+        }
+
+        userWallet = publicKeyStr;
+        activeWalletProvider = provider;
+        activeWalletName = walletName;
+        activeWalletId = walletId;
+        localStorage.setItem('farmvolume_last_wallet_id', walletId);
+
+        updateWalletConnectedUI(publicKeyStr, walletName);
+        closeWalletModal();
+        notify('Wallet Connected! 🎉', `Connected to ${walletName} (${publicKeyStr.substring(0, 4)}...${publicKeyStr.substring(publicKeyStr.length - 4)})`, 'success');
         await refreshBalances();
+
+        if (typeof provider.on === 'function') {
+          provider.on('disconnect', () => {
+            disconnectWallet(false);
+          });
+          provider.on('accountChanged', (newPubkey) => {
+            if (newPubkey) {
+              userWallet = newPubkey.toString();
+              updateWalletConnectedUI(userWallet, activeWalletName);
+              refreshBalances();
+            } else {
+              disconnectWallet(false);
+            }
+          });
+        }
       } catch (err) {
         console.error('Wallet connection error:', err);
-        notify('Connection Failed', err.message, 'error');
+        notify('Connection Failed', err.message || 'User rejected wallet connection.', 'error');
+      }
+    }
+
+    function updateWalletConnectedUI(pubkey, walletName) {
+      document.getElementById('walletAddress').innerText = pubkey.substring(0, 6) + '...' + pubkey.substring(pubkey.length - 6);
+      
+      const badge = document.getElementById('connectedWalletBadge');
+      if (badge) {
+        badge.innerText = walletName;
+        badge.style.display = 'inline-block';
+      }
+
+      const btn = document.getElementById('connectWalletBtn');
+      btn.className = 'btn-success';
+      const icon = walletName.toLowerCase().includes('jup') ? '🪐' : walletName.toLowerCase().includes('sol') ? '🔆' : walletName.toLowerCase().includes('back') ? '🎒' : '👻';
+      btn.innerHTML = `<span>${icon} ${pubkey.substring(0, 4)}...${pubkey.substring(pubkey.length - 4)}</span>`;
+
+      const solscan = document.getElementById('solscanLink');
+      solscan.href = `https://solscan.io/account/${pubkey}`;
+      solscan.style.display = 'inline';
+
+      const discBtn = document.getElementById('disconnectBtn');
+      if (discBtn) discBtn.style.display = 'inline-flex';
+
+      document.getElementById('balancesRow').style.display = 'flex';
+      document.getElementById('testSwapBtn').disabled = false;
+    }
+
+    async function disconnectWallet(triggerNotify = true) {
+      try {
+        if (activeWalletProvider && typeof activeWalletProvider.disconnect === 'function') {
+          await activeWalletProvider.disconnect();
+        } else if (activeWalletProvider?.features && activeWalletProvider.features['standard:disconnect']) {
+          await activeWalletProvider.features['standard:disconnect'].disconnect();
+        }
+      } catch (e) {
+        console.warn('Disconnect notice:', e);
+      }
+
+      userWallet = null;
+      activeWalletProvider = null;
+      activeWalletName = 'Wallet';
+      activeWalletId = null;
+      localStorage.removeItem('farmvolume_last_wallet_id');
+
+      document.getElementById('walletAddress').innerText = 'Not Connected (Click Connect Above)';
+      const badge = document.getElementById('connectedWalletBadge');
+      if (badge) badge.style.display = 'none';
+      
+      const solscan = document.getElementById('solscanLink');
+      if (solscan) solscan.style.display = 'none';
+
+      const discBtn = document.getElementById('disconnectBtn');
+      if (discBtn) discBtn.style.display = 'none';
+
+      document.getElementById('balancesRow').style.display = 'none';
+      document.getElementById('testSwapBtn').disabled = true;
+
+      const btn = document.getElementById('connectWalletBtn');
+      btn.className = 'btn-primary';
+      btn.innerHTML = '<span>⚡ Connect Wallet</span>';
+
+      if (triggerNotify) {
+        notify('Wallet Disconnected', 'Disconnected from Solana wallet.', 'info');
+      }
+    }
+
+    function openInMobileApp(walletId) {
+      const currentUrl = window.location.href;
+      const origin = window.location.origin;
+
+      if (walletId === 'phantom') {
+        const link = `https://phantom.com/ul/browse/${encodeURIComponent(currentUrl)}?ref=${encodeURIComponent(origin)}`;
+        window.location.href = link;
+        return;
+      }
+
+      if (walletId === 'jupiter') {
+        copyCurrentUrlForMobile(false);
+        const customScheme = `jupiter://browse?url=${encodeURIComponent(currentUrl)}`;
+        const universalLink = `https://jup.ag/ul/browse?url=${encodeURIComponent(currentUrl)}`;
+        
+        notify('Opening Jupiter Mobile', 'Launching Jupiter App... dApp URL copied to clipboard!', 'purple', 5000);
+        window.location.href = customScheme;
+        setTimeout(() => {
+          window.open(universalLink, '_blank');
+        }, 1200);
+        return;
+      }
+
+      if (walletId === 'solflare') {
+        const link = `https://solflare.com/ul/v1/browse/${encodeURIComponent(currentUrl)}?ref=${encodeURIComponent(origin)}`;
+        window.location.href = link;
+        return;
+      }
+
+      if (walletId === 'backpack') {
+        const link = `https://backpack.app/ul/browse/${encodeURIComponent(currentUrl)}`;
+        window.location.href = link;
+        return;
+      }
+
+      copyCurrentUrlForMobile(true);
+    }
+
+    function copyCurrentUrlForMobile(showLongToast = true) {
+      const url = window.location.href;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(() => {
+          const btnText = document.getElementById('copyUrlBtnText');
+          if (btnText) {
+            btnText.innerText = '✓ Copied!';
+            setTimeout(() => { btnText.innerText = '📋 Copy Link'; }, 2500);
+          }
+          if (showLongToast) {
+            notify('URL Copied! 📋', 'Open your Jupiter or Phantom Mobile App, tap Browser (🌐) and paste this link.', 'success', 6000);
+          }
+        }).catch(() => {
+          prompt('Copy this link to open in your mobile wallet app:', url);
+        });
+      } else {
+        prompt('Copy this link to open in your mobile wallet app:', url);
+      }
+    }
+
+    async function signAndSendTransactionUniversal(transaction) {
+      const provider = getActiveWalletProvider();
+      if (!provider) {
+        throw new Error('No active wallet connected. Please connect your wallet first.');
+      }
+
+      // Approach 1: signAndSendTransaction method on provider
+      if (typeof provider.signAndSendTransaction === 'function') {
+        try {
+          const res = await provider.signAndSendTransaction(transaction);
+          const sig = typeof res === 'string' ? res : (res && res.signature ? res.signature : null);
+          if (sig) return sig;
+        } catch (err) {
+          if (typeof provider.signTransaction !== 'function') throw err;
+          console.warn('signAndSendTransaction failed, falling back to signTransaction + RPC broadcast:', err);
+        }
+      }
+
+      // Approach 2: Wallet Standard features
+      if (provider.features && provider.features['solana:signAndSendTransaction']) {
+        try {
+          const feature = provider.features['solana:signAndSendTransaction'];
+          const serialized = transaction.serialize ? transaction.serialize() : transaction;
+          const [result] = await feature.signAndSendTransaction({
+            account: provider.accounts ? provider.accounts[0] : undefined,
+            chain: 'solana:mainnet',
+            transaction: serialized
+          });
+          if (result && result.signature) {
+            const sig = encodeBase58(result.signature);
+            if (sig) return sig;
+          }
+        } catch (standardErr) {
+          console.warn('Wallet standard sign error, falling back:', standardErr);
+        }
+      }
+
+      // Approach 3: signTransaction + Connection sendRawTransaction
+      if (typeof provider.signTransaction === 'function') {
+        const signedTx = await provider.signTransaction(transaction);
+        const conn = getSolanaConnection();
+        const rawBytes = signedTx.serialize ? signedTx.serialize() : signedTx;
+        const sig = await conn.sendRawTransaction(rawBytes, {
+          skipPreflight: true,
+          preflightCommitment: 'confirmed',
+          maxRetries: 3
+        });
+        return sig;
+      }
+
+      throw new Error(`Connected wallet (${activeWalletName}) does not support transaction signing.`);
+    }
+
+    async function autoDetectAndInitWallets() {
+      initWalletStandard();
+
+      // Check if inside mobile in-app browser or previously connected
+      const inApp = detectInAppBrowser();
+      const lastWalletId = localStorage.getItem('farmvolume_last_wallet_id');
+
+      if (inApp) {
+        const def = WALLET_DEFS.find(w => w.id === inApp);
+        let provider = def ? def.getProvider() : (window.phantom?.solana || window.jupiter || window.solana);
+        if (provider) {
+          try {
+            if (typeof provider.connect === 'function') {
+              const res = await provider.connect({ onlyIfTrusted: true });
+              if (res?.publicKey || provider.publicKey) {
+                await connectToProvider(provider, def ? def.name : 'In-App Wallet', inApp);
+                return;
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      if (lastWalletId) {
+        const def = WALLET_DEFS.find(w => w.id === lastWalletId);
+        const provider = def ? def.getProvider() : null;
+        if (provider && typeof provider.connect === 'function') {
+          try {
+            const res = await provider.connect({ onlyIfTrusted: true });
+            if (res?.publicKey || provider.publicKey) {
+              await connectToProvider(provider, def.name, def.id);
+            }
+          } catch (_) {}
+        }
       }
     }
 
@@ -1058,7 +1820,8 @@
     // ============================================
     async function executeTestSwap() {
       if (!userWallet) {
-        notify('Wallet Required', 'Please connect your Phantom or Solflare wallet first.', 'warning');
+        notify('Wallet Required', 'Please connect your Solana wallet (Jupiter, Phantom, etc.) first.', 'warning');
+        openWalletModal();
         return;
       }
 
@@ -1102,13 +1865,12 @@
           onlyDirectRoutes: true,
         });
 
-        notify('Awaiting Approval', 'Please confirm the swap in your wallet popup...', 'purple', 5000);
+        notify('Awaiting Approval', `Please confirm the swap in ${activeWalletName}...`, 'purple', 5000);
 
-        const provider = window.phantom?.solana || window.solana;
         const txBytes = Uint8Array.from(atob(prepData.swapTransaction), (c) => c.charCodeAt(0));
         const transaction = solanaWeb3.VersionedTransaction.deserialize(txBytes);
 
-        const { signature } = await provider.signAndSendTransaction(transaction);
+        const signature = await signAndSendTransactionUniversal(transaction);
         console.log('Swap transaction submitted! Tx:', signature);
 
         recordTradeClientSide({
@@ -1139,7 +1901,8 @@
 
     async function startDirectAutoLoop() {
       if (!userWallet) {
-        notify('Wallet Required', 'Please connect your Phantom wallet first.', 'warning');
+        notify('Wallet Required', 'Please connect your Solana wallet first.', 'warning');
+        openWalletModal();
         return;
       }
 
@@ -1271,13 +2034,12 @@
           onlyDirectRoutes: true,
         });
 
-        notify('Confirm in Phantom', `Please approve swap: $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'purple', 6000);
+        notify(`Confirm in ${activeWalletName}`, `Please approve swap: $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'purple', 6000);
 
-        const provider = window.phantom?.solana || window.solana;
         const txBytes = Uint8Array.from(atob(prepData.swapTransaction), (c) => c.charCodeAt(0));
         const transaction = solanaWeb3.VersionedTransaction.deserialize(txBytes);
 
-        const { signature } = await provider.signAndSendTransaction(transaction);
+        const signature = await signAndSendTransactionUniversal(transaction);
         console.log('Swap confirmed on-chain! Tx:', signature);
 
         recordTradeClientSide({
@@ -1299,8 +2061,9 @@
       }
     }
 
-    // Initialize Dashboard on load
+    // Initialize Dashboard & Wallets on load
     renderDashboard();
+    autoDetectAndInitWallets();
     if (localStorage.getItem('farmvolume_custom_rpc')) {
       document.getElementById('customRpcInput').value = localStorage.getItem('farmvolume_custom_rpc');
     }
