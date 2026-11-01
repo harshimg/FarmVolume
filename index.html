@@ -558,10 +558,13 @@
           <a id="solscanLink" href="#" target="_blank" class="tx-link" style="display: none;">View on Solscan ↗</a>
           <button id="disconnectBtn" onclick="disconnectWallet()" style="display:none; padding:4px 10px; font-size:0.75rem; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:#f87171; border-radius:6px; cursor:pointer;">Disconnect</button>
         </div>
-        <div class="balances-row" id="balancesRow" style="display: none;">
-          <div class="balance-tag">SOL: <strong id="balSol">0.0000</strong></div>
+        <div class="balances-row" id="balancesRow" style="display: none; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div class="balance-tag">SOL: <strong id="balSol">0.0000 SOL</strong></div>
           <div class="balance-tag">USDC: <strong id="balUsdc">$0.00</strong></div>
           <div class="balance-tag">USDT: <strong id="balUsdt">$0.00</strong></div>
+          <button id="refreshBalBtn" onclick="manualRefreshBalances()" title="Refresh balances" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;">
+            <span id="refreshBalIcon">🔄</span> <span>Refresh</span>
+          </button>
         </div>
       </div>
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -1401,7 +1404,8 @@
     // ============================================
     const DEFAULT_RPCS = [
       'https://solana-rpc.publicnode.com',
-      'https://api.mainnet-beta.solana.com'
+      'https://api.mainnet-beta.solana.com',
+      'https://rpc.ankr.com/solana'
     ];
     let activeRpcIndex = 0;
 
@@ -1411,8 +1415,16 @@
       return DEFAULT_RPCS[activeRpcIndex];
     }
 
+    function rotateRpc() {
+      activeRpcIndex = (activeRpcIndex + 1) % DEFAULT_RPCS.length;
+      console.log('Rotating to RPC:', DEFAULT_RPCS[activeRpcIndex]);
+    }
+
     function getSolanaConnection() {
-      return new solanaWeb3.Connection(getRpcUrl(), 'confirmed');
+      return new solanaWeb3.Connection(getRpcUrl(), {
+        commitment: 'confirmed',
+        confirmTransactionInitialTimeout: 30000
+      });
     }
 
     function toggleRpcBar() {
@@ -1457,6 +1469,17 @@
       }
     }
 
+    async function manualRefreshBalances() {
+      const icon = document.getElementById('refreshBalIcon');
+      if (icon) icon.innerText = '⏳';
+      await refreshBalances();
+      if (icon) {
+        icon.innerText = '✅';
+        setTimeout(() => { icon.innerText = '🔄'; }, 1200);
+      }
+      notify('Balances Refreshed', 'Latest on-chain balances updated', 'info', 2500);
+    }
+
     // Helper: Derive SPL Token ATA
     function deriveAta(ownerPubkey, mintPubkey) {
       const [address] = solanaWeb3.PublicKey.findProgramAddressSync(
@@ -1470,64 +1493,133 @@
       return address;
     }
 
-    // Helper: Direct Binary SPL Token Balance Decoder (Bypasses all RPC index limits)
-    function decodeSplTokenBalance(base64Data, decimals = 6) {
-      if (!base64Data) return 0;
+    // Helper: Universal SPL Token Binary & Format Decoder
+    function decodeSplTokenData(data, decimals = 6) {
+      if (!data) return 0;
       try {
-        const binaryString = atob(base64Data);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
+        let bytes;
+        if (data instanceof Uint8Array || (typeof Buffer !== 'undefined' && Buffer.isBuffer(data))) {
+          bytes = data;
+        } else if (Array.isArray(data) && typeof data[0] === 'string') {
+          const bin = atob(data[0]);
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        } else if (typeof data === 'string') {
+          const bin = atob(data);
+          bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        } else {
+          return 0;
         }
-        const view = new DataView(bytes.buffer);
-        const low = view.getUint32(64, true);
-        const high = view.getUint32(68, true);
-        const rawAmount = BigInt(low) + (BigInt(high) << 32n);
+
+        if (bytes.length < 72) return 0;
+
+        const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        let rawAmount = 0n;
+        if (typeof view.getBigUint64 === 'function') {
+          rawAmount = view.getBigUint64(64, true);
+        } else {
+          const low = view.getUint32(64, true);
+          const high = view.getUint32(68, true);
+          rawAmount = BigInt(low) + (BigInt(high) << 32n);
+        }
         return Number(rawAmount) / Math.pow(10, decimals);
-      } catch (e) {
-        console.warn('Decode SPL balance failed:', e);
+      } catch (err) {
+        console.warn('Decode SPL balance failed:', err);
         return 0;
       }
+    }
+
+    // Helper: Multi-Tier SPL Token Balance Fetcher
+    async function fetchSplTokenBalance(conn, ownerPubkey, mintPubkey, decimals = 6) {
+      // Tier 1: getParsedTokenAccountsByOwner (catches all ATA & auxiliary accounts)
+      try {
+        const parsed = await conn.getParsedTokenAccountsByOwner(ownerPubkey, { mint: mintPubkey });
+        if (parsed && parsed.value && parsed.value.length > 0) {
+          let total = 0;
+          for (const item of parsed.value) {
+            const tokenAmount = item.account?.data?.parsed?.info?.tokenAmount;
+            if (tokenAmount) {
+              if (typeof tokenAmount.uiAmount === 'number') {
+                total += tokenAmount.uiAmount;
+              } else if (tokenAmount.amount) {
+                total += Number(tokenAmount.amount) / Math.pow(10, decimals);
+              }
+            }
+          }
+          return total;
+        }
+      } catch (e) {
+        console.warn('Tier 1 (parsed accounts) note:', e.message);
+      }
+
+      // Tier 2: getTokenAccountBalance on derived ATA
+      const ata = deriveAta(ownerPubkey, mintPubkey);
+      try {
+        const ataRes = await conn.getTokenAccountBalance(ata);
+        if (ataRes && ataRes.value && typeof ataRes.value.uiAmount === 'number') {
+          return ataRes.value.uiAmount;
+        }
+      } catch (e) {
+        // ATA may not exist on-chain
+      }
+
+      // Tier 3: getAccountInfo on ATA with universal binary decoding
+      try {
+        const accInfo = await conn.getAccountInfo(ata);
+        if (accInfo && accInfo.data) {
+          return decodeSplTokenData(accInfo.data, decimals);
+        }
+      } catch (e) {
+        console.warn('Tier 3 (account info) note:', e.message);
+      }
+
+      return 0;
     }
 
     // 2. Client-Side High-Speed Blockchain Balance Fetch
     async function refreshBalances() {
       if (!userWallet) return;
       try {
-        const conn = getSolanaConnection();
+        let conn = getSolanaConnection();
         const pubkey = new solanaWeb3.PublicKey(userWallet);
-
-        // Fetch Native SOL Balance
-        const lamports = await conn.getBalance(pubkey);
-        const solVal = lamports / 1e9;
-
         const usdcMint = new solanaWeb3.PublicKey(TOKENS.USDC);
         const usdtMint = new solanaWeb3.PublicKey(TOKENS.USDT);
 
-        // Fetch USDC via Direct Account Info Decode
-        let usdcVal = 0;
-        try {
-          const usdcAta = deriveAta(pubkey, usdcMint);
-          const accInfo = await conn.getAccountInfo(usdcAta);
-          if (accInfo && accInfo.data) {
-            const rawData = Array.isArray(accInfo.data) ? accInfo.data[0] : accInfo.data;
-            usdcVal = decodeSplTokenBalance(rawData, 6);
-          }
-        } catch (e) {
-          console.warn('USDC decode note:', e);
+        // Fetch Native SOL, USDC, and USDT in parallel
+        let [solLamports, usdcAmount, usdtAmount] = await Promise.allSettled([
+          conn.getBalance(pubkey),
+          fetchSplTokenBalance(conn, pubkey, usdcMint, 6),
+          fetchSplTokenBalance(conn, pubkey, usdtMint, 6)
+        ]);
+
+        let solVal = solLamports.status === 'fulfilled' ? solLamports.value / 1e9 : 0;
+        let usdcVal = usdcAmount.status === 'fulfilled' ? usdcAmount.value : 0;
+        let usdtVal = usdtAmount.status === 'fulfilled' ? usdtAmount.value : 0;
+
+        // If RPC failed completely, try next fallback RPC
+        if (solLamports.status === 'rejected' && !localStorage.getItem('farmvolume_custom_rpc')) {
+          rotateRpc();
+          conn = getSolanaConnection();
+          try {
+            const lamports = await conn.getBalance(pubkey);
+            solVal = lamports / 1e9;
+            usdcVal = await fetchSplTokenBalance(conn, pubkey, usdcMint, 6);
+            usdtVal = await fetchSplTokenBalance(conn, pubkey, usdtMint, 6);
+          } catch (_) {}
         }
 
-        // Fetch USDT via Direct Account Info Decode
-        let usdtVal = 0;
-        try {
-          const usdtAta = deriveAta(pubkey, usdtMint);
-          const accInfo = await conn.getAccountInfo(usdtAta);
-          if (accInfo && accInfo.data) {
-            const rawData = Array.isArray(accInfo.data) ? accInfo.data[0] : accInfo.data;
-            usdtVal = decodeSplTokenBalance(rawData, 6);
-          }
-        } catch (e) {
-          console.warn('USDT decode note:', e);
+        // Tier 4: Server API fallback (in case public RPC is throttled / blocked by browser CORS)
+        if (usdcVal === 0 && usdtVal === 0) {
+          try {
+            const resp = await fetch(`/api/wallet-balances?pubkey=${pubkey.toBase58()}`);
+            if (resp.ok) {
+              const data = await resp.json();
+              if (typeof data.usdc === 'number' && data.usdc > 0) usdcVal = data.usdc;
+              if (typeof data.usdt === 'number' && data.usdt > 0) usdtVal = data.usdt;
+              if (solVal === 0 && typeof data.sol === 'number') solVal = data.sol;
+            }
+          } catch (_) {}
         }
 
         updateBalancesUI(solVal, usdcVal, usdtVal);

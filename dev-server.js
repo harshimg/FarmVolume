@@ -68,6 +68,14 @@ const server = http.createServer(async (req, res) => {
         }
       } catch (_) {}
 
+      if (usdc === 0 && getAssociatedTokenAddress) {
+        try {
+          const usdcAta = await getAssociatedTokenAddress(new PublicKey(TOKENS.USDC), pubkey);
+          const bal = await connection.getTokenAccountBalance(usdcAta);
+          usdc = bal?.value?.uiAmount || 0;
+        } catch (_) {}
+      }
+
       // 3. USDT balance
       let usdt = 0;
       try {
@@ -77,6 +85,14 @@ const server = http.createServer(async (req, res) => {
           usdt += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
         }
       } catch (_) {}
+
+      if (usdt === 0 && getAssociatedTokenAddress) {
+        try {
+          const usdtAta = await getAssociatedTokenAddress(new PublicKey(TOKENS.USDT), pubkey);
+          const bal = await connection.getTokenAccountBalance(usdtAta);
+          usdt = bal?.value?.uiAmount || 0;
+        } catch (_) {}
+      }
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ sol, usdc, usdt }));
