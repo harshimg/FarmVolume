@@ -1,7 +1,6 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
 let Connection, PublicKey, getAssociatedTokenAddress, getAccount;
 try {
@@ -39,12 +38,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const parsedUrl = url.parse(req.url, true);
+  const baseURL = 'http://' + (req.headers.host || 'localhost');
+  const parsedUrl = new URL(req.url, baseURL);
   const pathname = parsedUrl.pathname;
 
   // API 1: /api/wallet-balances
   if (pathname === '/api/wallet-balances') {
-    const pubkeyStr = parsedUrl.query.pubkey;
+    const pubkeyStr = parsedUrl.searchParams.get('pubkey');
     if (!pubkeyStr || !connection) {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Missing pubkey or Solana connection not available' }));
@@ -106,12 +106,12 @@ const server = http.createServer(async (req, res) => {
 
   // API 2: /api/titan-quote (Server proxy for Titan Exchange to bypass browser CORS)
   if (pathname === '/api/titan-quote') {
-    const inputMint = parsedUrl.query.inputMint;
-    const outputMint = parsedUrl.query.outputMint;
-    const amount = parsedUrl.query.amount;
-    const userPublicKey = parsedUrl.query.userPublicKey;
-    const slippageBps = parsedUrl.query.slippageBps || '50';
-    const apiKey = parsedUrl.query.apiKey || req.headers['x-api-key'] || process.env.TITAN_AUTH_TOKEN || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
+    const inputMint = parsedUrl.searchParams.get('inputMint');
+    const outputMint = parsedUrl.searchParams.get('outputMint');
+    const amount = parsedUrl.searchParams.get('amount');
+    const userPublicKey = parsedUrl.searchParams.get('userPublicKey');
+    const slippageBps = parsedUrl.searchParams.get('slippageBps') || '50';
+    const apiKey = parsedUrl.searchParams.get('apiKey') || req.headers['x-api-key'] || process.env.TITAN_AUTH_TOKEN || 'EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta';
 
     if (!inputMint || !outputMint || !amount || !userPublicKey) {
       res.writeHead(400, { 'Content-Type': 'application/json' });

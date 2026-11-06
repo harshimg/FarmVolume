@@ -586,11 +586,11 @@
         <div class="form-group">
           <label>DEX Platform</label>
           <select id="dexPlatform" onchange="toggleDexPlatform()">
-            <option value="titan" selected>Titan Exchange (Argos Meta-DEX / DART)</option>
-            <option value="jupiter">Jupiter Aggregator (Instant / Zero-Key)</option>
+            <option value="jupiter" selected>Jupiter Aggregator (Instant / Zero-Key)</option>
+            <option value="titan">Titan Exchange (Argos Meta-DEX / DART)</option>
           </select>
         </div>
-        <div class="form-group" id="titanKeyGroup" style="display: flex;">
+        <div class="form-group" id="titanKeyGroup" style="display: none;">
           <label>Titan API Key <a href="https://developer.titan.exchange" target="_blank" style="color:var(--primary); font-size:0.75rem; text-decoration:none;">(Connected ✓)</a></label>
           <input type="password" id="titanApiKey" value="EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta" placeholder="Paste Titan API Key">
         </div>
@@ -1578,6 +1578,13 @@
     }
 
     // 2. Client-Side High-Speed Blockchain Balance Fetch
+    function withRpcTimeout(promise, ms = 4000) {
+      return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('RPC request timeout')), ms))
+      ]);
+    }
+
     async function refreshBalances() {
       if (!userWallet) return;
       try {
@@ -1586,11 +1593,11 @@
         const usdcMint = new solanaWeb3.PublicKey(TOKENS.USDC);
         const usdtMint = new solanaWeb3.PublicKey(TOKENS.USDT);
 
-        // Fetch Native SOL, USDC, and USDT in parallel
+        // Fetch Native SOL, USDC, and USDT in parallel with timeout protection
         let [solLamports, usdcAmount, usdtAmount] = await Promise.allSettled([
-          conn.getBalance(pubkey),
-          fetchSplTokenBalance(conn, pubkey, usdcMint, 6),
-          fetchSplTokenBalance(conn, pubkey, usdtMint, 6)
+          withRpcTimeout(conn.getBalance(pubkey), 4000),
+          withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdcMint, 6), 4000),
+          withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdtMint, 6), 4000)
         ]);
 
         let solVal = solLamports.status === 'fulfilled' ? solLamports.value / 1e9 : 0;
@@ -1602,17 +1609,17 @@
           rotateRpc();
           conn = getSolanaConnection();
           try {
-            const lamports = await conn.getBalance(pubkey);
+            const lamports = await withRpcTimeout(conn.getBalance(pubkey), 3000);
             solVal = lamports / 1e9;
-            usdcVal = await fetchSplTokenBalance(conn, pubkey, usdcMint, 6);
-            usdtVal = await fetchSplTokenBalance(conn, pubkey, usdtMint, 6);
+            usdcVal = await withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdcMint, 6), 3000);
+            usdtVal = await withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdtMint, 6), 3000);
           } catch (_) {}
         }
 
         // Tier 4: Server API fallback (in case public RPC is throttled / blocked by browser CORS)
         if (usdcVal === 0 && usdtVal === 0) {
           try {
-            const resp = await fetch(`/api/wallet-balances?pubkey=${pubkey.toBase58()}`);
+            const resp = await withRpcTimeout(fetch(`/api/wallet-balances?pubkey=${pubkey.toBase58()}`), 3000);
             if (resp.ok) {
               const data = await resp.json();
               if (typeof data.usdc === 'number' && data.usdc > 0) usdcVal = data.usdc;
@@ -1640,7 +1647,7 @@
       exchange = 'jupiter',
       titanApiKey = '',
       priorityFeeLamports = 5000,
-      onlyDirectRoutes = true
+      onlyDirectRoutes = false
     }) {
       const isInputSol = inputMint === TOKENS.SOL;
       const isOutputSol = outputMint === TOKENS.SOL;
@@ -1764,15 +1771,9 @@
 
       // --- Option B: Jupiter Aggregator (Native Client-Side CORS Enabled) ---
       const directParam = onlyDirectRoutes ? '&onlyDirectRoutes=true' : '';
-      let quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn${directParam}`;
-      let quoteRes = await fetch(quoteUrl);
-
-      if (!quoteRes.ok && onlyDirectRoutes) {
-        // Fallback without direct-only
-        quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn`;
-        quoteRes = await fetch(quoteUrl);
-      }
-
+      const quoteUrl = `https://api.jup.ag/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=${slippageBps}&swapMode=ExactIn${directParam}`;
+      
+      const quoteRes = await withRpcTimeout(fetch(quoteUrl), 4500);
       if (!quoteRes.ok) {
         const errTxt = await quoteRes.text();
         throw new Error(`Jupiter quote failed: ${errTxt}`);
@@ -1780,7 +1781,7 @@
 
       const quoteResponse = await quoteRes.json();
 
-      const swapRes = await fetch('https://api.jup.ag/swap/v1/swap', {
+      const swapRes = await withRpcTimeout(fetch('https://api.jup.ag/swap/v1/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1790,7 +1791,7 @@
           dynamicComputeUnitLimit: true,
           prioritizationFeeLamports: priorityFeeLamports || 5000,
         }),
-      });
+      }), 4500);
 
       if (!swapRes.ok) {
         const errTxt = await swapRes.text();
@@ -1943,7 +1944,7 @@
         const titanKey = document.getElementById('titanApiKey')?.value || '';
         const priorityFee = parseInt(document.getElementById('gasOptimization').value, 10);
 
-        notify('Preparing Swap', `Fetching optimal quote on ${dex.toUpperCase()}...`, 'info', 3000);
+        notify('Opening Wallet...', `Fetching fastest route on ${dex.toUpperCase()} and opening ${activeWalletName}...`, 'info', 2000);
 
         const prepData = await prepareSwapClientSide({
           userPublicKey: userWallet,
@@ -1954,7 +1955,7 @@
           exchange: dex,
           titanApiKey: titanKey,
           priorityFeeLamports: priorityFee,
-          onlyDirectRoutes: true,
+          onlyDirectRoutes: false,
         });
 
         notify('Awaiting Approval', `Please confirm the swap in ${activeWalletName}...`, 'purple', 5000);
@@ -1976,7 +1977,7 @@
 
         currentDirection = currentDirection === 'A_TO_B' ? 'B_TO_A' : 'A_TO_B';
         notify('Swap Confirmed! 🎉', `Swapped $${amount} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'success', 6000, `https://solscan.io/tx/${signature}`);
-        await refreshBalances();
+        refreshBalances().catch(() => {});
       } catch (err) {
         console.error('Test swap error:', err);
         notify('Swap Cancelled / Failed', err.message, 'error');
@@ -2004,11 +2005,12 @@
       const dex = document.getElementById('dexPlatform').value;
       const titanKey = document.getElementById('titanApiKey')?.value || '';
 
-      await refreshBalances();
-      const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
-      const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+      // Non-blocking balance refresh in background
+      refreshBalances().catch(() => {});
+      const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace(/[^0-9.]/g, '')) || 0;
 
-      const startingToken = (usdcVal < amount && usdtVal >= amount) ? 'USDT' : 'USDC';
+      let currentToken = (usdcVal < amount && usdtVal >= amount) ? 'USDT' : 'USDC';
 
       const confirmHtml = `
         <div style="font-size:0.95rem; margin-bottom:12px;">Launch volume farming cycles on ${dex.toUpperCase()}?</div>
@@ -2038,45 +2040,39 @@
       for (let cycle = 1; cycle <= cycles; cycle++) {
         if (!isLoopRunning) break;
 
-        await refreshBalances();
-        const curUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
-        const curUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
-
-        let inputToken = curUsdc >= amount ? 'USDC' : 'USDT';
+        let inputToken = currentToken;
         let outputToken = inputToken === 'USDC' ? 'USDT' : 'USDC';
         let inputMint = TOKENS[inputToken];
         let outputMint = TOKENS[outputToken];
 
         // --- STEP 1: Swap input -> output ---
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 1: ${inputToken} → ${outputToken} on ${dex.toUpperCase()}...`);
-        const ok1 = await executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey);
-        if (!ok1) {
+        const res1 = await executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey);
+        if (!res1 || !res1.success) {
           notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
           break;
         }
 
         completedSwaps++;
+        currentToken = outputToken;
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 1 Confirmed! Preparing Step 2...`);
 
         if (!isLoopRunning) break;
         if (speed > 0) await new Promise(r => setTimeout(r, Math.min(speed, 2000)));
 
         // --- STEP 2: Swap back output -> input ---
-        await refreshBalances();
-        const postUsdc = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
-        const postUsdt = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
-        let returnBal = outputToken === 'USDC' ? postUsdc : postUsdt;
-        let swapBackAmount = Math.min(returnBal, amount);
+        let swapBackAmount = res1.expectedOutput ? Math.min(res1.expectedOutput, amount) : amount;
         if (swapBackAmount < 0.5) swapBackAmount = amount;
 
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Step 2 (Swap Back): ${outputToken} → ${inputToken} on ${dex.toUpperCase()}...`);
-        const ok2 = await executeDirectSwap(outputMint, inputMint, outputToken, inputToken, swapBackAmount, dex, titanKey);
-        if (!ok2) {
+        const res2 = await executeDirectSwap(outputMint, inputMint, outputToken, inputToken, swapBackAmount, dex, titanKey);
+        if (!res2 || !res2.success) {
           notify('Cycle Paused', 'Transaction cancelled or failed in wallet. Stopping loop.', 'warning');
           break;
         }
 
         completedSwaps++;
+        currentToken = inputToken;
         updateLoopUI(completedSwaps, totalSwaps, `Cycle ${cycle}/${cycles} Completed! Volume: $${(completedSwaps * amount).toFixed(2)}`);
 
         if (!isLoopRunning) break;
@@ -2112,7 +2108,7 @@
 
     async function executeDirectSwap(inputMint, outputMint, inputToken, outputToken, amount, dex, titanKey) {
       try {
-        notify('Preparing Swap', `Fetching optimal quote for $${amount.toFixed(2)} ${inputToken} → ${outputToken}...`, 'info', 3000);
+        notify('Opening Wallet...', `Preparing swap: $${amount.toFixed(2)} ${inputToken} → ${outputToken} on ${dex.toUpperCase()}...`, 'info', 2000);
 
         const prepData = await prepareSwapClientSide({
           userPublicKey: userWallet,
@@ -2123,7 +2119,7 @@
           exchange: dex,
           titanApiKey: titanKey,
           priorityFeeLamports: 5000,
-          onlyDirectRoutes: true,
+          onlyDirectRoutes: false,
         });
 
         notify(`Confirm in ${activeWalletName}`, `Please approve swap: $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}`, 'purple', 6000);
@@ -2144,8 +2140,8 @@
         });
 
         notify('Swap Confirmed! ✅', `Swapped $${amount.toFixed(2)} ${inputToken} → ${prepData.expectedOutput.toFixed(4)} ${outputToken}!`, 'success', 5000, `https://solscan.io/tx/${signature}`);
-        await refreshBalances();
-        return true;
+        refreshBalances().catch(() => {});
+        return { success: true, expectedOutput: prepData.expectedOutput, signature };
       } catch (err) {
         console.error('Swap error:', err);
         notify('Swap Failed / Cancelled', err.message, 'error');
