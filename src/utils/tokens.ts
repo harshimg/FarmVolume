@@ -72,6 +72,12 @@ export const TOKENS: Record<string, Token> = {
     mint: 'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn',
     decimals: 9,
   },
+  USD1: {
+    symbol: 'USD1',
+    name: 'World Liberty Financial USD',
+    mint: 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB',
+    decimals: 6,
+  },
 };
 
 /** Pre-defined common trading pairs */
@@ -80,6 +86,12 @@ export const PAIRS: Record<string, TokenPair> = {
     id: 'USDC_USDT',
     tokenA: TOKENS.USDC,
     tokenB: TOKENS.USDT,
+    isStablePair: true,
+  },
+  USDC_USD1: {
+    id: 'USDC_USD1',
+    tokenA: TOKENS.USDC,
+    tokenB: TOKENS.USD1,
     isStablePair: true,
   },
   SOL_USDC: {

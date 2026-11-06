@@ -562,6 +562,7 @@
           <div class="balance-tag">SOL: <strong id="balSol">0.0000 SOL</strong></div>
           <div class="balance-tag">USDC: <strong id="balUsdc">$0.00</strong></div>
           <div class="balance-tag">USDT: <strong id="balUsdt">$0.00</strong></div>
+          <div class="balance-tag">USD1: <strong id="balUsd1">$0.00</strong></div>
           <button id="refreshBalBtn" onclick="manualRefreshBalances()" title="Refresh balances" style="padding: 4px 10px; font-size: 0.75rem; background: rgba(255,255,255,0.06); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px;">
             <span id="refreshBalIcon">🔄</span> <span>Refresh</span>
           </button>
@@ -586,18 +587,19 @@
         <div class="form-group">
           <label>DEX Platform</label>
           <select id="dexPlatform" onchange="toggleDexPlatform()">
-            <option value="jupiter" selected>Jupiter Aggregator (Instant / Zero-Key)</option>
-            <option value="titan">Titan Exchange (Argos Meta-DEX / DART)</option>
+            <option value="titan" selected>Titan Exchange (Argos Meta-DEX / DART)</option>
+            <option value="jupiter">Jupiter Aggregator (Instant / Zero-Key)</option>
           </select>
         </div>
-        <div class="form-group" id="titanKeyGroup" style="display: none;">
+        <div class="form-group" id="titanKeyGroup" style="display: flex;">
           <label>Titan API Key <a href="https://developer.titan.exchange" target="_blank" style="color:var(--primary); font-size:0.75rem; text-decoration:none;">(Connected ✓)</a></label>
           <input type="password" id="titanApiKey" value="EUrstrgMVk6zwYf1DLerp09DjhA7VyD5BJGuwBta" placeholder="Paste Titan API Key">
         </div>
         <div class="form-group">
           <label>Target Pair</label>
-          <select id="tradePair">
+          <select id="tradePair" onchange="updateTestSwapButton()">
             <option value="USDC_USDT" selected>USDC / USDT (Stablecoin)</option>
+            <option value="USDC_USD1">USDC / USD1 (Stablecoin)</option>
             <option value="SOL_USDC">SOL / USDC</option>
             <option value="JUP_USDC">JUP / USDC</option>
           </select>
@@ -714,6 +716,7 @@
       SOL: 'So11111111111111111111111111111111111111112',
       USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
       USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+      USD1: 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB',
       JUP: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
     };
 
@@ -782,6 +785,9 @@
 
     function getSelectedTokens() {
       const pair = document.getElementById('tradePair').value;
+      if (pair === 'USDC_USD1') {
+        return { tokenA: TOKENS.USDC, tokenB: TOKENS.USD1, symA: 'USDC', symB: 'USD1' };
+      }
       if (pair === 'SOL_USDC') {
         return { tokenA: TOKENS.SOL, tokenB: TOKENS.USDC, symA: 'SOL', symB: 'USDC' };
       }
@@ -1454,19 +1460,33 @@
       refreshBalances();
     }
 
-    function updateBalancesUI(sol, usdc, usdt) {
+    function updateTestSwapButton() {
+      const btn = document.getElementById('testSwapBtn');
+      if (!btn) return;
+      const info = getSelectedTokens();
+      const usdcVal = parseFloat(document.getElementById('balUsdc')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usdtVal = parseFloat(document.getElementById('balUsdt')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usd1Val = parseFloat(document.getElementById('balUsd1')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+      
+      let balA = info.symA === 'USDC' ? usdcVal : 0;
+      let balB = info.symB === 'USD1' ? usd1Val : (info.symB === 'USDT' ? usdtVal : 0);
+      
+      if (balA < 1.0 && balB >= 1.0) {
+        btn.innerHTML = `<span>⚡ Test 1 Swap ($1 ${info.symB} ⇄ ${info.symA})</span>`;
+      } else {
+        btn.innerHTML = `<span>⚡ Test 1 Swap ($1 ${info.symA} ⇄ ${info.symB})</span>`;
+      }
+    }
+
+    function updateBalancesUI(sol, usdc, usdt, usd1 = 0) {
       document.getElementById('balSol').innerText = (typeof sol === 'number' ? sol.toFixed(4) : sol) + ' SOL';
       document.getElementById('balUsdc').innerText = '$' + (typeof usdc === 'number' ? usdc.toFixed(2) : usdc);
       document.getElementById('balUsdt').innerText = '$' + (typeof usdt === 'number' ? usdt.toFixed(2) : usdt);
-
-      const btn = document.getElementById('testSwapBtn');
-      if (btn) {
-        if (usdc < 1.0 && usdt >= 1.0) {
-          btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDT ⇄ USDC)</span>';
-        } else {
-          btn.innerHTML = '<span>⚡ Test 1 Swap ($1 USDC ⇄ USDT)</span>';
-        }
+      const balUsd1El = document.getElementById('balUsd1');
+      if (balUsd1El) {
+        balUsd1El.innerText = '$' + (typeof usd1 === 'number' ? usd1.toFixed(2) : usd1);
       }
+      updateTestSwapButton();
     }
 
     async function manualRefreshBalances() {
@@ -1592,17 +1612,20 @@
         const pubkey = new solanaWeb3.PublicKey(userWallet);
         const usdcMint = new solanaWeb3.PublicKey(TOKENS.USDC);
         const usdtMint = new solanaWeb3.PublicKey(TOKENS.USDT);
+        const usd1Mint = new solanaWeb3.PublicKey(TOKENS.USD1);
 
-        // Fetch Native SOL, USDC, and USDT in parallel with timeout protection
-        let [solLamports, usdcAmount, usdtAmount] = await Promise.allSettled([
+        // Fetch Native SOL, USDC, USDT, and USD1 in parallel with timeout protection
+        let [solLamports, usdcAmount, usdtAmount, usd1Amount] = await Promise.allSettled([
           withRpcTimeout(conn.getBalance(pubkey), 4000),
           withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdcMint, 6), 4000),
-          withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdtMint, 6), 4000)
+          withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdtMint, 6), 4000),
+          withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usd1Mint, 6), 4000)
         ]);
 
         let solVal = solLamports.status === 'fulfilled' ? solLamports.value / 1e9 : 0;
         let usdcVal = usdcAmount.status === 'fulfilled' ? usdcAmount.value : 0;
         let usdtVal = usdtAmount.status === 'fulfilled' ? usdtAmount.value : 0;
+        let usd1Val = usd1Amount.status === 'fulfilled' ? usd1Amount.value : 0;
 
         // If RPC failed completely, try next fallback RPC
         if (solLamports.status === 'rejected' && !localStorage.getItem('farmvolume_custom_rpc')) {
@@ -1613,23 +1636,25 @@
             solVal = lamports / 1e9;
             usdcVal = await withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdcMint, 6), 3000);
             usdtVal = await withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usdtMint, 6), 3000);
+            usd1Val = await withRpcTimeout(fetchSplTokenBalance(conn, pubkey, usd1Mint, 6), 3000);
           } catch (_) {}
         }
 
         // Tier 4: Server API fallback (in case public RPC is throttled / blocked by browser CORS)
-        if (usdcVal === 0 && usdtVal === 0) {
+        if (usdcVal === 0 && usdtVal === 0 && usd1Val === 0) {
           try {
             const resp = await withRpcTimeout(fetch(`/api/wallet-balances?pubkey=${pubkey.toBase58()}`), 3000);
             if (resp.ok) {
               const data = await resp.json();
               if (typeof data.usdc === 'number' && data.usdc > 0) usdcVal = data.usdc;
               if (typeof data.usdt === 'number' && data.usdt > 0) usdtVal = data.usdt;
+              if (typeof data.usd1 === 'number' && data.usd1 > 0) usd1Val = data.usd1;
               if (solVal === 0 && typeof data.sol === 'number') solVal = data.sol;
             }
           } catch (_) {}
         }
 
-        updateBalancesUI(solVal, usdcVal, usdtVal);
+        updateBalancesUI(solVal, usdcVal, usdtVal, usd1Val);
       } catch (err) {
         console.error('Error in refreshBalances:', err);
       }
@@ -1739,7 +1764,7 @@
               }));
             }
 
-            const { blockhash } = await conn.getLatestBlockhash('confirmed');
+            const { blockhash } = await withRpcTimeout(conn.getLatestBlockhash('confirmed'), 4000);
             const messageV0 = new solanaWeb3.TransactionMessage({
               payerKey: new solanaWeb3.PublicKey(userPublicKey),
               recentBlockhash: blockhash,
@@ -1926,13 +1951,16 @@
         const amount = 1.0;
         const info = getSelectedTokens();
 
-        const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace('$', '')) || 0;
-        const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace('$', '')) || 0;
+        const usdcVal = parseFloat(document.getElementById('balUsdc')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+        const usdtVal = parseFloat(document.getElementById('balUsdt')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+        const usd1Val = parseFloat(document.getElementById('balUsd1')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+
+        let balA = info.symA === 'USDC' ? usdcVal : 0;
+        let balB = info.symB === 'USD1' ? usd1Val : (info.symB === 'USDT' ? usdtVal : 0);
+
         let isForward = currentDirection === 'A_TO_B';
-        if (info.symA === 'USDC' && info.symB === 'USDT') {
-          if (usdcVal < amount && usdtVal >= amount) {
-            isForward = false;
-          }
+        if (balA < amount && balB >= amount) {
+          isForward = false;
         }
 
         const inputMint = isForward ? info.tokenA : info.tokenB;
@@ -1982,7 +2010,7 @@
         console.error('Test swap error:', err);
         notify('Swap Cancelled / Failed', err.message, 'error');
       } finally {
-        btn.innerText = '⚡ Test 1 Swap ($1 USDC ⇄ USDT)';
+        updateTestSwapButton();
         btn.disabled = false;
       }
     }
@@ -1999,6 +2027,7 @@
         return;
       }
 
+      const pairInfo = getSelectedTokens();
       const cycles = parseInt(document.getElementById('cycleCount').value, 10) || 5;
       const amount = parseFloat(document.getElementById('tradeAmount').value) || 1.0;
       const speed = parseInt(document.getElementById('executionSpeed').value, 10) || 0;
@@ -2007,15 +2036,20 @@
 
       // Non-blocking balance refresh in background
       refreshBalances().catch(() => {});
-      const usdcVal = parseFloat(document.getElementById('balUsdc').innerText.replace(/[^0-9.]/g, '')) || 0;
-      const usdtVal = parseFloat(document.getElementById('balUsdt').innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usdcVal = parseFloat(document.getElementById('balUsdc')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usdtVal = parseFloat(document.getElementById('balUsdt')?.innerText.replace(/[^0-9.]/g, '')) || 0;
+      const usd1Val = parseFloat(document.getElementById('balUsd1')?.innerText.replace(/[^0-9.]/g, '')) || 0;
 
-      let currentToken = (usdcVal < amount && usdtVal >= amount) ? 'USDT' : 'USDC';
+      let balA = pairInfo.symA === 'USDC' ? usdcVal : 0;
+      let balB = pairInfo.symB === 'USD1' ? usd1Val : (pairInfo.symB === 'USDT' ? usdtVal : 0);
+
+      let currentToken = (balA < amount && balB >= amount) ? pairInfo.symB : pairInfo.symA;
 
       const confirmHtml = `
         <div style="font-size:0.95rem; margin-bottom:12px;">Launch volume farming cycles on ${dex.toUpperCase()}?</div>
         <div style="background:#0b0e14; padding:12px; border-radius:8px; border:1px solid var(--border); font-family:'JetBrains Mono'; font-size:0.85rem;">
           <div>• Wallet: <strong>${userWallet.substring(0, 6)}...${userWallet.substring(userWallet.length - 4)}</strong></div>
+          <div>• Pair: <strong>${pairInfo.symA} ⇄ ${pairInfo.symB}</strong></div>
           <div>• Cycles: <strong>${cycles}</strong> (${cycles * 2} swaps back-and-forth)</div>
           <div>• Trade Size: <strong>$${amount}</strong></div>
           <div>• Mode: <strong>100% Client-Side Browser Execution</strong></div>
@@ -2041,7 +2075,7 @@
         if (!isLoopRunning) break;
 
         let inputToken = currentToken;
-        let outputToken = inputToken === 'USDC' ? 'USDT' : 'USDC';
+        let outputToken = inputToken === pairInfo.symA ? pairInfo.symB : pairInfo.symA;
         let inputMint = TOKENS[inputToken];
         let outputMint = TOKENS[outputToken];
 

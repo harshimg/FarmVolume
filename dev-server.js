@@ -24,6 +24,7 @@ if (Connection) {
 const TOKENS = {
   USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
   USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+  USD1: 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB',
 };
 
 const server = http.createServer(async (req, res) => {
@@ -94,8 +95,26 @@ const server = http.createServer(async (req, res) => {
         } catch (_) {}
       }
 
+      // 4. USD1 balance
+      let usd1 = 0;
+      try {
+        const usd1Mint = new PublicKey(TOKENS.USD1);
+        const parsed = await connection.getParsedTokenAccountsByOwner(pubkey, { mint: usd1Mint });
+        for (const item of parsed.value) {
+          usd1 += item.account.data.parsed.info.tokenAmount.uiAmount || 0;
+        }
+      } catch (_) {}
+
+      if (usd1 === 0 && getAssociatedTokenAddress) {
+        try {
+          const usd1Ata = await getAssociatedTokenAddress(new PublicKey(TOKENS.USD1), pubkey);
+          const bal = await connection.getTokenAccountBalance(usd1Ata);
+          usd1 = bal?.value?.uiAmount || 0;
+        } catch (_) {}
+      }
+
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ sol, usdc, usdt }));
+      res.end(JSON.stringify({ sol, usdc, usdt, usd1 }));
       return;
     } catch (err) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
